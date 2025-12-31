@@ -1,0 +1,40 @@
+# Hex ignore file - excludes files from the published package
+
+# Development and build artifacts
+_build/
+deps/
+.elixir_ls/
+.vscode/
+.idea/
+
+# Test files (keep test/ directory structure but exclude from package)
+test/
+
+# Documentation build
+doc/
+docs/project-outline.md
+docs/hex-publishing-guide.md
+
+# Examples (these are included in README, no need to package separately)
+examples/
+
+# Git and development files
+.git/
+.gitignore
+.tool-versions
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Kiro specs (development artifacts)
+.kiro/
+
+# Environment files
+.env
+.env.local
