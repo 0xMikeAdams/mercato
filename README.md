@@ -409,9 +409,9 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Documentation
+<!-- ## Documentation
 
-Full documentation is available at [https://hexdocs.pm/mercato](https://hexdocs.pm/mercato).
+Full documentation is available at [https://hexdocs.pm/mercato](https://hexdocs.pm/mercato). -->
 
 ## Support
 
