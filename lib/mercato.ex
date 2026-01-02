@@ -91,4 +91,33 @@ defmodule Mercato do
   def version do
     Application.spec(:mercato, :vsn) |> to_string()
   end
+
+  @doc """
+  Returns the configured Ecto repo module used by Mercato.
+
+  Host applications can override this to use their own repo:
+
+      config :mercato, :repo, MyApp.Repo
+  """
+  def repo do
+    Application.get_env(:mercato, :repo, Mercato.Repo)
+  end
+
+  @doc """
+  Returns the configured Phoenix PubSub server used by Mercato events.
+
+  Host applications can override this to use their existing PubSub:
+
+      config :mercato, :pubsub, MyApp.PubSub
+  """
+  def pubsub do
+    Application.get_env(:mercato, :pubsub, Mercato.PubSub)
+  end
+
+  @doc false
+  def repo_started? do
+    repo()
+    |> Process.whereis()
+    |> is_pid()
+  end
 end

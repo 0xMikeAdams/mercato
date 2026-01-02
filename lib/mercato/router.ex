@@ -200,22 +200,27 @@ defmodule Mercato.Router do
   """
   defmacro mercato_basic_routes(opts \\ []) do
     prefix = Keyword.get(opts, :prefix, "")
+    controllers = Keyword.get(opts, :controllers)
+
+    product_controller = controller_ast(controllers, :ProductController)
+    cart_controller = controller_ast(controllers, :CartController)
+    order_controller = controller_ast(controllers, :OrderController)
 
     quote do
       # Basic product routes
-      get "#{unquote(prefix)}/products", ProductController, :index
-      get "#{unquote(prefix)}/products/:id", ProductController, :show
+      get "#{unquote(prefix)}/products", unquote(product_controller), :index
+      get "#{unquote(prefix)}/products/:id", unquote(product_controller), :show
 
       # Basic cart routes
-      get "#{unquote(prefix)}/carts/:cart_token", CartController, :show
-      post "#{unquote(prefix)}/carts", CartController, :create
-      post "#{unquote(prefix)}/carts/:cart_token/items", CartController, :add_item
-      put "#{unquote(prefix)}/carts/:cart_token/items/:item_id", CartController, :update_item
-      delete "#{unquote(prefix)}/carts/:cart_token/items/:item_id", CartController, :remove_item
+      get "#{unquote(prefix)}/carts/:cart_token", unquote(cart_controller), :show
+      post "#{unquote(prefix)}/carts", unquote(cart_controller), :create
+      post "#{unquote(prefix)}/carts/:cart_token/items", unquote(cart_controller), :add_item
+      put "#{unquote(prefix)}/carts/:cart_token/items/:item_id", unquote(cart_controller), :update_item
+      delete "#{unquote(prefix)}/carts/:cart_token/items/:item_id", unquote(cart_controller), :remove_item
 
       # Basic order routes
-      get "#{unquote(prefix)}/orders/:id", OrderController, :show
-      post "#{unquote(prefix)}/orders", OrderController, :create
+      get "#{unquote(prefix)}/orders/:id", unquote(order_controller), :show
+      post "#{unquote(prefix)}/orders", unquote(order_controller), :create
     end
   end
 
@@ -285,5 +290,13 @@ defmodule Mercato.Router do
       get "#{unquote(api_prefix)}/referrals/validate/:code", Mercato.ReferralController, :validate
       get "#{unquote(api_prefix)}/referrals/stats/:code", Mercato.ReferralController, :stats
     end
+  end
+
+  defp controller_ast(nil, name) when is_atom(name) do
+    {:__aliases__, [], [name]}
+  end
+
+  defp controller_ast(base, name) when is_atom(name) do
+    Module.concat(base, name)
   end
 end

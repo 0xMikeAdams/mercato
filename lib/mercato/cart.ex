@@ -37,7 +37,7 @@ defmodule Mercato.Cart do
   import Ecto.Query, warn: false
   require Logger
 
-  alias Mercato.Repo
+  alias Mercato
   alias Mercato.Cart.{Cart, CartItem, Calculator, Manager}
   alias Mercato.Catalog
   alias Mercato.Events
@@ -56,12 +56,12 @@ defmodule Mercato.Cart do
       {:error, :not_found}
   """
   def get_cart(cart_id) do
-    case Repo.get(Cart, cart_id) do
+    case repo().get(Cart, cart_id) do
       nil ->
         {:error, :not_found}
 
       cart ->
-        cart = Repo.preload(cart, items: [:product, :variant])
+        cart = repo().preload(cart, items: [:product, :variant])
         {:ok, cart}
     end
   end
@@ -78,12 +78,12 @@ defmodule Mercato.Cart do
       {:error, :not_found}
   """
   def get_cart_by_token(cart_token) do
-    case Repo.get_by(Cart, cart_token: cart_token) do
+    case repo().get_by(Cart, cart_token: cart_token) do
       nil ->
         {:error, :not_found}
 
       cart ->
-        cart = Repo.preload(cart, items: [:product, :variant])
+        cart = repo().preload(cart, items: [:product, :variant])
         {:ok, cart}
     end
   end
@@ -108,12 +108,12 @@ defmodule Mercato.Cart do
         order_by: [desc: c.updated_at],
         limit: 1
 
-    case Repo.one(query) do
+    case repo().one(query) do
       nil ->
         {:error, :not_found}
 
       cart ->
-        cart = Repo.preload(cart, items: [:product, :variant])
+        cart = repo().preload(cart, items: [:product, :variant])
         {:ok, cart}
     end
   end
@@ -135,7 +135,7 @@ defmodule Mercato.Cart do
   def create_cart(attrs \\ %{}) do
     %Cart{}
     |> Cart.create_changeset(attrs)
-    |> Repo.insert()
+    |> repo().insert()
     |> case do
       {:ok, cart} ->
         # Start a cart manager GenServer for this cart (skip in test environment)
@@ -149,7 +149,7 @@ defmodule Mercato.Cart do
           end
         end
 
-        {:ok, Repo.preload(cart, :items)}
+        {:ok, repo().preload(cart, :items)}
 
       {:error, changeset} ->
         {:error, changeset}
@@ -193,7 +193,7 @@ defmodule Mercato.Cart do
 
           existing_item
           |> CartItem.changeset(%{quantity: new_quantity})
-          |> Repo.update()
+          |> repo().update()
         else
           # Create new cart item
           %CartItem{}
@@ -204,7 +204,7 @@ defmodule Mercato.Cart do
             quantity: quantity,
             unit_price: price
           })
-          |> Repo.insert()
+          |> repo().insert()
         end
 
       case result do
@@ -235,7 +235,7 @@ defmodule Mercato.Cart do
          {:ok, item} <- get_cart_item(cart, item_id) do
       item
       |> CartItem.changeset(%{quantity: quantity})
-      |> Repo.update()
+      |> repo().update()
       |> case do
         {:ok, _item} ->
           cart = recalculate_and_broadcast(cart_id)
@@ -260,8 +260,8 @@ defmodule Mercato.Cart do
   """
   def remove_item(cart_id, item_id) do
     with {:ok, cart} <- get_cart(cart_id),
-         {:ok, item} <- get_cart_item(cart, item_id) do
-      Repo.delete(item)
+      {:ok, item} <- get_cart_item(cart, item_id) do
+      repo().delete(item)
 
       cart = recalculate_and_broadcast(cart_id)
       Events.broadcast_cart_item_removed(cart, item_id)
@@ -285,7 +285,7 @@ defmodule Mercato.Cart do
     with {:ok, cart} <- get_cart(cart_id) do
       # Delete all cart items
       from(i in CartItem, where: i.cart_id == ^cart_id)
-      |> Repo.delete_all()
+      |> repo().delete_all()
 
       # Reset totals
       cart
@@ -296,10 +296,10 @@ defmodule Mercato.Cart do
         tax_total: Decimal.new("0.00"),
         grand_total: Decimal.new("0.00")
       })
-      |> Repo.update()
+      |> repo().update()
       |> case do
         {:ok, updated_cart} ->
-          updated_cart = Repo.preload(updated_cart, :items, force: true)
+          updated_cart = repo().preload(updated_cart, :items, force: true)
           Events.broadcast_cart_cleared(cart_id)
           {:ok, updated_cart}
 
@@ -334,7 +334,7 @@ defmodule Mercato.Cart do
       # Apply coupon to cart
       cart
       |> Cart.coupon_changeset(%{applied_coupon_id: coupon.id})
-      |> Repo.update()
+      |> repo().update()
       |> case do
         {:ok, _updated_cart} ->
           # Recalculate totals with coupon applied
@@ -359,7 +359,7 @@ defmodule Mercato.Cart do
     with {:ok, cart} <- get_cart(cart_id) do
       cart
       |> Cart.coupon_changeset(%{applied_coupon_id: nil})
-      |> Repo.update()
+      |> repo().update()
       |> case do
         {:ok, _updated_cart} ->
           # Recalculate totals without coupon
@@ -394,10 +394,10 @@ defmodule Mercato.Cart do
       # Apply referral code to cart
       cart
       |> Cart.referral_changeset(%{referral_code_id: referral_code_record.id})
-      |> Repo.update()
+      |> repo().update()
       |> case do
         {:ok, updated_cart} ->
-          {:ok, Repo.preload(updated_cart, items: [:product, :variant])}
+          {:ok, repo().preload(updated_cart, items: [:product, :variant])}
 
         {:error, changeset} ->
           {:error, changeset}
@@ -417,10 +417,10 @@ defmodule Mercato.Cart do
     with {:ok, cart} <- get_cart(cart_id) do
       cart
       |> Cart.referral_changeset(%{referral_code_id: nil})
-      |> Repo.update()
+      |> repo().update()
       |> case do
         {:ok, updated_cart} ->
-          {:ok, Repo.preload(updated_cart, items: [:product, :variant])}
+          {:ok, repo().preload(updated_cart, items: [:product, :variant])}
 
         {:error, changeset} ->
           {:error, changeset}
@@ -462,7 +462,7 @@ defmodule Mercato.Cart do
       # Update cart with new totals
       cart
       |> Cart.totals_changeset(totals)
-      |> Repo.update()
+      |> repo().update()
       |> case do
         {:ok, updated_cart} ->
           # Update in-memory state if manager is running
@@ -470,7 +470,7 @@ defmodule Mercato.Cart do
             Manager.update_cart(cart_id, updated_cart)
           end
 
-          {:ok, Repo.preload(updated_cart, :items, force: true)}
+          {:ok, repo().preload(updated_cart, :items, force: true)}
 
         {:error, changeset} ->
           {:error, changeset}
@@ -619,4 +619,6 @@ defmodule Mercato.Cart do
   defp get_tax_calculator do
     Application.get_env(:mercato, :tax_calculator)
   end
+
+  defp repo, do: Mercato.repo()
 end

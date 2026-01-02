@@ -257,7 +257,7 @@ defmodule MyStoreWeb.CartController do
 
   def show(conn, _params) do
     cart_token = get_cart_token(conn)
-    {:ok, cart} = Cart.get_cart(cart_token)
+    {:ok, cart} = Cart.get_cart_by_token(cart_token)
 
     conn
     |> assign(:cart, cart)
@@ -383,7 +383,7 @@ defmodule MyStoreWeb.CartController do
 
   def get_cart_summary(conn, _params) do
     cart_token = get_cart_token(conn)
-    {:ok, cart} = Cart.get_cart(cart_token)
+    {:ok, cart} = Cart.get_cart_by_token(cart_token)
 
     json(conn, %{
       item_count: cart_item_count(cart),
@@ -485,7 +485,7 @@ defmodule MyStoreWeb.CheckoutController do
 
   def show(conn, _params) do
     cart_token = get_cart_token(conn)
-    {:ok, cart} = Cart.get_cart(cart_token)
+    {:ok, cart} = Cart.get_cart_by_token(cart_token)
 
     if Enum.empty?(cart.cart_items) do
       conn
@@ -508,7 +508,7 @@ defmodule MyStoreWeb.CheckoutController do
 
   def create_order(conn, %{"order" => order_params}) do
     cart_token = get_cart_token(conn)
-    {:ok, cart} = Cart.get_cart(cart_token)
+    {:ok, cart} = Cart.get_cart_by_token(cart_token)
 
     if Enum.empty?(cart.cart_items) do
       conn
@@ -570,7 +570,7 @@ defmodule MyStoreWeb.CheckoutController do
         |> redirect(to: Routes.order_path(conn, :show, order.id))
 
       {:error, changeset} ->
-        {:ok, cart} = Cart.get_cart(cart_token)
+        {:ok, cart} = Cart.get_cart_by_token(cart_token)
         addresses = get_customer_addresses(conn)
 
         conn
@@ -609,7 +609,7 @@ defmodule MyStoreWeb.CheckoutController do
   # AJAX endpoint for shipping calculation
   def calculate_shipping(conn, %{"address" => address_params}) do
     cart_token = get_cart_token(conn)
-    {:ok, cart} = Cart.get_cart(cart_token)
+    {:ok, cart} = Cart.get_cart_by_token(cart_token)
 
     # Calculate shipping options
     shipping_options = calculate_shipping_options(cart, address_params)
@@ -622,7 +622,7 @@ defmodule MyStoreWeb.CheckoutController do
   # AJAX endpoint for tax calculation
   def calculate_tax(conn, %{"address" => address_params}) do
     cart_token = get_cart_token(conn)
-    {:ok, cart} = Cart.get_cart(cart_token)
+    {:ok, cart} = Cart.get_cart_by_token(cart_token)
 
     # Calculate tax
     tax_amount = calculate_tax_amount(cart, address_params)

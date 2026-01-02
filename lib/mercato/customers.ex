@@ -35,7 +35,7 @@ defmodule Mercato.Customers do
   """
 
   import Ecto.Query, warn: false
-  alias Mercato.Repo
+  alias Mercato
   alias Mercato.Customers.{Customer, Address}
 
   ## Customer Management
@@ -63,7 +63,7 @@ defmodule Mercato.Customers do
   def get_customer(user_id, opts \\ []) do
     query = from c in Customer, where: c.user_id == ^user_id
 
-    case query |> maybe_preload(opts[:preload]) |> Repo.one() do
+    case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
       customer -> {:ok, customer}
     end
@@ -89,7 +89,7 @@ defmodule Mercato.Customers do
   def get_customer_by_id(customer_id, opts \\ []) do
     query = from c in Customer, where: c.id == ^customer_id
 
-    case query |> maybe_preload(opts[:preload]) |> Repo.one() do
+    case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
       customer -> {:ok, customer}
     end
@@ -114,7 +114,7 @@ defmodule Mercato.Customers do
   def create_customer(attrs \\ %{}) do
     %Customer{}
     |> Customer.changeset(attrs)
-    |> Repo.insert()
+    |> repo().insert()
   end
 
   @doc """
@@ -131,7 +131,7 @@ defmodule Mercato.Customers do
   def update_customer(%Customer{} = customer, attrs) do
     customer
     |> Customer.changeset(attrs)
-    |> Repo.update()
+    |> repo().update()
   end
 
   @doc """
@@ -146,7 +146,7 @@ defmodule Mercato.Customers do
       {:error, %Ecto.Changeset{}}
   """
   def delete_customer(%Customer{} = customer) do
-    Repo.delete(customer)
+    repo().delete(customer)
   end
 
   @doc """
@@ -184,7 +184,7 @@ defmodule Mercato.Customers do
     query
     |> filter_by_address_type(opts[:address_type])
     |> order_by([a], [desc: a.is_default, asc: a.inserted_at])
-    |> Repo.all()
+    |> repo().all()
   end
 
   defp filter_by_address_type(query, nil), do: query
@@ -204,7 +204,7 @@ defmodule Mercato.Customers do
       {:error, :not_found}
   """
   def get_address(address_id) do
-    case Repo.get(Address, address_id) do
+    case repo().get(Address, address_id) do
       nil -> {:error, :not_found}
       address -> {:ok, address}
     end
@@ -233,7 +233,7 @@ defmodule Mercato.Customers do
   def add_address(customer_id, attrs \\ %{}) do
     attrs = Map.put(attrs, :customer_id, customer_id)
 
-    Repo.transaction(fn ->
+    repo().transaction(fn ->
       # If this is being set as default, unset existing defaults of the same type
       if Map.get(attrs, :is_default) || Map.get(attrs, "is_default") do
         address_type = Map.get(attrs, :address_type) || Map.get(attrs, "address_type")
@@ -242,10 +242,10 @@ defmodule Mercato.Customers do
 
       %Address{}
       |> Address.changeset(attrs)
-      |> Repo.insert()
+      |> repo().insert()
       |> case do
         {:ok, address} -> address
-        {:error, changeset} -> Repo.rollback(changeset)
+        {:error, changeset} -> repo().rollback(changeset)
       end
     end)
   end
@@ -264,7 +264,7 @@ defmodule Mercato.Customers do
       {:error, %Ecto.Changeset{}}
   """
   def update_address(%Address{} = address, attrs) do
-    Repo.transaction(fn ->
+    repo().transaction(fn ->
       # If this is being set as default, unset existing defaults of the same type
       if Map.get(attrs, :is_default) || Map.get(attrs, "is_default") do
         address_type = Map.get(attrs, :address_type) || Map.get(attrs, "address_type") || address.address_type
@@ -273,10 +273,10 @@ defmodule Mercato.Customers do
 
       address
       |> Address.changeset(attrs)
-      |> Repo.update()
+      |> repo().update()
       |> case do
         {:ok, address} -> address
-        {:error, changeset} -> Repo.rollback(changeset)
+        {:error, changeset} -> repo().rollback(changeset)
       end
     end)
   end
@@ -290,7 +290,7 @@ defmodule Mercato.Customers do
       {:ok, %Address{}}
   """
   def delete_address(%Address{} = address) do
-    Repo.delete(address)
+    repo().delete(address)
   end
 
   @doc """
@@ -310,7 +310,7 @@ defmodule Mercato.Customers do
     query = from a in Address,
       where: a.customer_id == ^customer_id and a.address_type == ^address_type and a.is_default == true
 
-    case Repo.one(query) do
+    case repo().one(query) do
       nil -> {:error, :not_found}
       address -> {:ok, address}
     end
@@ -327,15 +327,15 @@ defmodule Mercato.Customers do
       {:ok, %Address{}}
   """
   def set_default_address(%Address{} = address) do
-    Repo.transaction(fn ->
+    repo().transaction(fn ->
       unset_default_address(address.customer_id, address.address_type, address.id)
 
       address
       |> Address.changeset(%{is_default: true})
-      |> Repo.update()
+      |> repo().update()
       |> case do
         {:ok, address} -> address
-        {:error, changeset} -> Repo.rollback(changeset)
+        {:error, changeset} -> repo().rollback(changeset)
       end
     end)
   end
@@ -369,7 +369,7 @@ defmodule Mercato.Customers do
       query
       |> maybe_limit(opts[:limit])
       |> maybe_preload(opts[:preload])
-      |> Repo.all()
+      |> repo().all()
     else
       {:error, :not_found} -> []
     end
@@ -401,7 +401,7 @@ defmodule Mercato.Customers do
     query
     |> maybe_limit(opts[:limit])
     |> maybe_preload(opts[:preload])
-    |> Repo.all()
+    |> repo().all()
   end
 
   # Private Functions
@@ -422,6 +422,8 @@ defmodule Mercato.Customers do
       query
     end
 
-    Repo.update_all(query, set: [is_default: false])
+    repo().update_all(query, set: [is_default: false])
   end
+
+  defp repo, do: Mercato.repo()
 end

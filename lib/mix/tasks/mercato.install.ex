@@ -2,53 +2,33 @@ defmodule Mix.Tasks.Mercato.Install do
   @moduledoc """
   Installs Mercato into a Phoenix application.
 
-  This task copies the necessary migrations to your application's priv/repo/migrations
-  directory, generates configuration templates, and provides setup instructions.
+  This task copies the Mercato migrations into your application and injects the required
+  configuration and router wiring directly (no manual copy/paste).
 
   ## Usage
 
-      mix mercato.install              # Install with prompts for existing files
-      mix mercato.install --force      # Overwrite existing files
+      mix mercato.install
+      mix mercato.install --force
 
   ## What it does
 
-  1. Copies all Mercato migrations to your application
-  2. Creates configuration template (config/mercato.exs)
-  3. Generates sample router integration (lib/mercato_router_sample.ex)
-  4. Creates sample LiveView integration (lib/mercato_liveview_sample.ex)
-  5. Displays configuration instructions
-  6. Provides next steps for setup
+  1. Copies all Mercato migrations to `priv/repo/migrations`
+  2. Creates/updates `config/mercato.exs` and ensures `config/config.exs` imports it
+  3. Injects Mercato routes into your Phoenix router (basic API + referral shortlink)
 
   ## Options
 
   * `--force` or `-f` - Overwrite existing migrations and configuration files
-
-  ## Configuration
-
-  After running this task, review the generated config/mercato.exs file and copy
-  the relevant sections to your application's configuration files.
-
-  Then add Mercato.Repo to your application's supervision tree in application.ex:
-
-      children = [
-        # ... your existing children
-        Mercato.Repo,
-        {Phoenix.PubSub, name: Mercato.PubSub}
-      ]
-
-  Finally, run migrations:
-
-      mix ecto.create
-      mix ecto.migrate
   """
 
   use Mix.Task
 
-  @shortdoc "Installs Mercato migrations and provides setup instructions"
+  @shortdoc "Installs Mercato migrations and injects config/routes"
 
   @impl Mix.Task
   def run(args) do
-    {opts, _, _} = OptionParser.parse(args, switches: [force: :boolean], aliases: [f: :force])
+    {opts, _, _} =
+      OptionParser.parse(args, switches: [force: :boolean], aliases: [f: :force])
 
     # Ensure the migrations directory exists
     migrations_path = Path.join([File.cwd!(), "priv", "repo", "migrations"])
@@ -69,52 +49,27 @@ defmodule Mix.Tasks.Mercato.Install do
       Mix.shell().info("\nNo migrations found. They will be available in future releases.")
     end
 
-    # Generate configuration template if it doesn't exist
-    generate_config_template()
+    force? = opts[:force] || false
 
-    # Create sample configuration files
-    create_sample_configs()
+    ensure_config_imported!("config/config.exs", "mercato.exs")
+    upsert_mercato_config!("config/mercato.exs", force?)
+    inject_router!("", force?)
 
-    # Display configuration instructions
     Mix.shell().info("""
 
     #{IO.ANSI.green()}Mercato installation complete!#{IO.ANSI.reset()}
 
     #{IO.ANSI.yellow()}Next steps:#{IO.ANSI.reset()}
 
-    1. Add Mercato configuration to your config/config.exs:
+    1. Run migrations:
 
-        config :mercato, Mercato.Repo,
-          database: "your_app_dev",
-          username: "postgres",
-          password: "postgres",
-          hostname: "localhost"
-
-        config :mercato,
-          ecto_repos: [Mercato.Repo]
-
-    2. Update your config/test.exs:
-
-        config :mercato, Mercato.Repo,
-          database: "your_app_test\#{System.get_env("MIX_TEST_PARTITION")}",
-          pool: Ecto.Adapters.SQL.Sandbox
-
-    3. Add Mercato to your application supervision tree (lib/your_app/application.ex):
-
-        children = [
-          # ... your existing children
-          Mercato.Repo,
-          {Phoenix.PubSub, name: Mercato.PubSub}
-        ]
-
-    4. Run migrations:
-
-        mix ecto.create
         mix ecto.migrate
 
-    5. Start using Mercato in your application!
+    2. Start your server and hit:
 
-    For more information, visit: https://hexdocs.pm/mercato
+        GET /api/mercato/products
+        POST /api/mercato/carts
+        GET /r/:code
     """)
   end
 
@@ -144,149 +99,173 @@ defmodule Mix.Tasks.Mercato.Install do
     end)
   end
 
-  defp generate_config_template do
-    config_path = "config/mercato.exs"
-
+  defp ensure_config_imported!(config_path, imported_file) do
     unless File.exists?(config_path) do
-      config_content = """
-      # Mercato Configuration Template
-      # Copy the relevant sections to your config files
+      Mix.raise("Expected #{config_path} to exist")
+    end
 
-      # config/config.exs
-      config :mercato, Mercato.Repo,
-        database: "your_app_dev",
-        username: "postgres",
-        password: "postgres",
-        hostname: "localhost",
-        show_sensitive_data_on_connection_error: true,
-        pool_size: 10
+    line = "import_config \"#{imported_file}\""
+    contents = File.read!(config_path)
 
-      config :mercato,
-        ecto_repos: [Mercato.Repo],
-        # Payment gateway configuration
-        payment_gateway: Mercato.PaymentGateways.Dummy,
-        # Shipping calculator configuration
-        shipping_calculator: Mercato.ShippingCalculators.FlatRate,
-        # Tax calculator configuration
-        tax_calculator: Mercato.TaxCalculators.Simple,
-        # Store settings
-        store_settings: %{
-          currency: "USD",
-          locale: "en",
-          default_tax_rate: 0.08,
-          store_address: %{
-            line1: "123 Store St",
-            city: "Store City",
-            state: "ST",
-            postal_code: "12345",
-            country: "US"
-          }
-        }
+    if String.contains?(contents, line) do
+      :ok
+    else
+      env_import_re = ~r/^\s*import_config\s+"#\{config_env\(\)\}\.exs"\s*$/m
 
-      # config/dev.exs
-      config :mercato, Mercato.Repo,
-        database: "your_app_dev",
-        show_sensitive_data_on_connection_error: true,
-        pool_size: 10
+      updated =
+        if Regex.match?(env_import_re, contents) do
+          # Typical pattern: `import_config "#{config_env()}.exs"`
+          Regex.replace(env_import_re, contents, line <> "\n\\0")
+        else
+          contents <> "\n\n" <> line <> "\n"
+        end
 
-      # config/test.exs
-      config :mercato, Mercato.Repo,
-        database: "your_app_test\#{System.get_env("MIX_TEST_PARTITION")}",
-        pool: Ecto.Adapters.SQL.Sandbox,
-        pool_size: 10
-
-      # config/prod.exs
-      config :mercato, Mercato.Repo,
-        # Configure your production database URL
-        # url: database_url,
-        pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-        ssl: true
-      """
-
-      File.write!(config_path, config_content)
-      Mix.shell().info("* created #{config_path}")
+      File.write!(config_path, updated)
+      Mix.shell().info("* updated #{config_path} (import_config #{imported_file})")
     end
   end
 
-  defp create_sample_configs do
-    # Create sample router integration
-    router_sample_path = "lib/mercato_router_sample.ex"
+  defp upsert_mercato_config!(path, force?) do
+    {app_module, repo_module, pubsub_module} = detect_app_modules()
 
-    unless File.exists?(router_sample_path) do
-      router_content = """
-      # Sample Router Integration
-      # Add this to your existing router or create a new scope
-
-      defmodule YourAppWeb.Router do
-        use YourAppWeb, :router
-        import Mercato.Router
-
-        # ... your existing routes
-
-        scope "/api", YourAppWeb do
-          pipe_through :api
-
-          # Mount Mercato API routes
-          mercato_api_routes()
-        end
-
-        # Referral shortlinks
-        scope "/", YourAppWeb do
-          pipe_through :browser
-
-          get "/r/:code", Mercato.ReferralController, :redirect
-        end
+    file_header =
+      if File.exists?(path) do
+        File.read!(path)
+      else
+        "import Config\n"
       end
-      """
 
-      File.write!(router_sample_path, router_content)
-      Mix.shell().info("* created #{router_sample_path}")
-    end
+    block = """
+    # BEGIN MERCATO
+    config :mercato,
+      repo: #{inspect(repo_module)},
+      pubsub: #{inspect(pubsub_module)},
+      payment_gateway: Mercato.PaymentGateways.Dummy,
+      shipping_calculator: Mercato.ShippingCalculators.FlatRate,
+      tax_calculator: Mercato.TaxCalculators.Simple,
+      store_url: "/",
+      referral_cookie_name: "mercato_referral",
+      referral_cookie_max_age: 30 * 24 * 60 * 60,
+      referral_cookie_http_only: true,
+      referral_cookie_same_site: "Lax",
+      trust_forwarded_headers: false
 
-    # Create sample LiveView integration
-    liveview_sample_path = "lib/mercato_liveview_sample.ex"
+    config :mercato, Mercato.Subscriptions.Scheduler,
+      enabled: false
+    # END MERCATO
+    """
 
-    unless File.exists?(liveview_sample_path) do
-      liveview_content = """
-      # Sample LiveView Integration
-      # Example of how to integrate Mercato with Phoenix LiveView
+    updated = upsert_block(file_header, "MERCATO", block, force?)
+    File.write!(path, updated)
+    Mix.shell().info("* updated #{path}")
+  end
 
-      defmodule YourAppWeb.CartLive do
-        use YourAppWeb, :live_view
-        alias Mercato.{Cart, Events}
+  defp inject_router!(_root, force?) do
+    router_path = find_router_path!()
+    router_contents = File.read!(router_path)
 
-        def mount(_params, %{"cart_token" => cart_token}, socket) do
-          if connected?(socket) do
-            Events.subscribe_to_cart(cart_token)
-          end
+    {app_module, _repo_module, _pubsub_module} = detect_app_modules()
 
-          {:ok, cart} = Cart.get_cart(cart_token)
-          {:ok, assign(socket, cart: cart)}
-        end
-
-        def handle_info({:cart_updated, cart}, socket) do
-          {:noreply, assign(socket, cart: cart)}
-        end
-
-        def handle_event("add_item", %{"product_id" => product_id}, socket) do
-          {:ok, cart} = Cart.add_item(socket.assigns.cart.id, product_id, 1)
-          {:noreply, assign(socket, cart: cart)}
-        end
-
-        def render(assigns) do
-          ~H\"\"\"
-          <div>
-            <h2>Shopping Cart</h2>
-            <div>Items: <%= length(@cart.cart_items) %></div>
-            <div>Total: $<%= @cart.grand_total %></div>
-          </div>
-          \"\"\"
-        end
+    web_module =
+      case Regex.run(~r/^\s*defmodule\s+([A-Za-z0-9_.]+)\.Router\s+do\s*$/m, router_contents) do
+        [_, mod] -> Module.concat([mod])
+        _ -> nil
       end
-      """
 
-      File.write!(liveview_sample_path, liveview_content)
-      Mix.shell().info("* created #{liveview_sample_path}")
+    scope_module =
+      case web_module do
+        nil -> app_module <> "Web"
+        mod -> mod |> Atom.to_string() |> String.trim_leading("Elixir.")
+      end
+
+    block = """
+      # BEGIN MERCATO
+      import Mercato.Router
+
+      pipeline :mercato_api do
+        plug :accepts, ["json"]
+      end
+
+      scope "/api/mercato", #{scope_module} do
+        pipe_through :mercato_api
+        mercato_basic_routes(controllers: Mercato.Controllers)
+      end
+
+      mercato_referral_routes(api_prefix: "/api/mercato")
+      # END MERCATO
+    """
+
+    updated = upsert_block_before_last_end(router_contents, "MERCATO", block, force?)
+
+    if updated != router_contents do
+      File.write!(router_path, updated)
+      Mix.shell().info("* updated #{router_path} (routes)")
     end
+  end
+
+  defp upsert_block_before_last_end(contents, marker, block, force?) do
+    begin_marker = "# BEGIN #{marker}"
+    end_marker = "# END #{marker}"
+
+    cond do
+      String.contains?(contents, begin_marker) and String.contains?(contents, end_marker) ->
+        upsert_block(contents, marker, block, force?)
+
+      true ->
+        case Regex.scan(~r/^end\s*$/m, contents, return: :index) do
+          [] ->
+            String.trim_trailing(contents) <> "\n\n" <> String.trim_trailing(block) <> "\n"
+
+          matches ->
+            {start, _len} = List.last(matches) |> hd()
+            {head, tail} = String.split_at(contents, start)
+            String.trim_trailing(head) <> "\n\n" <> String.trim_trailing(block) <> "\n\n" <> tail
+        end
+    end
+  end
+
+  defp upsert_block(contents, marker, block, _force?) do
+    begin_marker = "# BEGIN #{marker}"
+    end_marker = "# END #{marker}"
+
+    cond do
+      String.contains?(contents, begin_marker) and String.contains?(contents, end_marker) ->
+        Regex.replace(
+          ~r/^\s*#{Regex.escape(begin_marker)}.*?^\s*#{Regex.escape(end_marker)}\s*$/ms,
+          contents,
+          String.trim_trailing(block)
+        )
+
+      true ->
+        String.trim_trailing(contents) <> "\n\n" <> String.trim_trailing(block) <> "\n"
+    end
+  end
+
+  defp find_router_path! do
+    candidates =
+      ["lib/**/*router.ex", "apps/*/lib/**/*router.ex"]
+      |> Enum.flat_map(&Path.wildcard/1)
+      |> Enum.uniq()
+
+    case Enum.find(candidates, &router_file?/1) do
+      nil -> Mix.raise("Could not find a Phoenix router file (looked for lib/**/*router.ex)")
+      path -> path
+    end
+  end
+
+  defp router_file?(path) do
+    content = File.read!(path)
+    String.contains?(content, "defmodule") and String.contains?(content, ".Router") and
+      (String.contains?(content, ":router") or String.contains?(content, "use Phoenix.Router"))
+  end
+
+  defp detect_app_modules do
+    app = Mix.Project.config()[:app] || :app
+    app_module = app |> to_string() |> Macro.camelize()
+
+    repo_module = Module.concat([app_module, "Repo"])
+    pubsub_module = Module.concat([app_module, "PubSub"])
+
+    {app_module, repo_module, pubsub_module}
   end
 end

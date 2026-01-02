@@ -10,7 +10,7 @@ defmodule Mercato.Config.StoreSetting do
 
   - `key`: Unique setting identifier (string)
   - `value`: The setting value stored as JSONB
-  - `value_type`: Type indicator ("string", "integer", "boolean", "map")
+  - `value_type`: Type indicator ("string", "integer", "boolean", "map", "decimal")
 
   ## Examples
 
@@ -42,14 +42,14 @@ defmodule Mercato.Config.StoreSetting do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
-  @value_types ~w(string integer boolean map)
+  @value_types ~w(string integer boolean map decimal)
 
   schema "store_settings" do
     field :key, :string
     field :value, :map
     field :value_type, :string
 
-    timestamps()
+    timestamps(type: :utc_datetime)
   end
 
   @doc """
@@ -92,6 +92,11 @@ defmodule Mercato.Config.StoreSetting do
       {"integer", v} when is_integer(v) -> changeset
       {"boolean", v} when is_boolean(v) -> changeset
       {"map", v} when is_map(v) -> changeset
+      {"decimal", v} when is_binary(v) ->
+        case Decimal.parse(v) do
+          {:ok, _} -> changeset
+          :error -> add_error(changeset, :value, "does not match declared type decimal")
+        end
       {type, _} when type in @value_types ->
         add_error(changeset, :value, "does not match declared type #{type}")
       _ ->

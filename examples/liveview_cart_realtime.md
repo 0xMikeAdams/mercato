@@ -17,7 +17,7 @@ defmodule MyStoreWeb.CartLive.Index do
       Events.subscribe_to_cart(cart_token)
     end
 
-    {:ok, cart} = Cart.get_cart(cart_token)
+    {:ok, cart} = Cart.get_cart_by_token(cart_token)
 
     socket =
       socket
@@ -45,7 +45,7 @@ defmodule MyStoreWeb.CartLive.Index do
 
   @impl true
   def handle_info({:cart_cleared, _cart_id}, socket) do
-    {:ok, empty_cart} = Cart.get_cart(socket.assigns.cart_token)
+    {:ok, empty_cart} = Cart.get_cart_by_token(socket.assigns.cart_token)
     
     socket =
       socket
@@ -547,7 +547,7 @@ defmodule MyStoreWeb.Components.MiniCart do
       Events.subscribe_to_cart(cart_token)
     end
 
-    {:ok, cart} = Cart.get_cart(cart_token)
+    {:ok, cart} = Cart.get_cart_by_token(cart_token)
 
     socket =
       socket
@@ -589,7 +589,7 @@ defmodule MyStoreWeb.Components.MiniCart do
 
   @impl true
   def handle_info({:cart_cleared, _cart_id}, socket) do
-    {:ok, empty_cart} = Cart.get_cart(socket.assigns.cart_token)
+    {:ok, empty_cart} = Cart.get_cart_by_token(socket.assigns.cart_token)
     {:noreply, assign(socket, :cart, empty_cart)}
   end
 

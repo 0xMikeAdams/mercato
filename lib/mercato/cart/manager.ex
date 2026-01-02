@@ -31,7 +31,7 @@ defmodule Mercato.Cart.Manager do
   use GenServer
   require Logger
 
-  alias Mercato.Repo
+  alias Mercato
   alias Mercato.Cart.Cart
 
   @persist_interval :timer.minutes(5)
@@ -115,7 +115,7 @@ defmodule Mercato.Cart.Manager do
   def init(opts) do
     cart_id = Keyword.fetch!(opts, :cart_id)
 
-    case Repo.get(Cart, cart_id) do
+    case repo().get(Cart, cart_id) do
       nil ->
         {:stop, :cart_not_found}
 
@@ -223,9 +223,9 @@ defmodule Mercato.Cart.Manager do
   end
 
   defp persist_to_database(state) do
-    cart = state.cart |> Repo.preload(:items)
+    cart = state.cart |> repo().preload(:items)
 
-    case Repo.update(Cart.totals_changeset(cart, %{
+    case repo().update(Cart.totals_changeset(cart, %{
       subtotal: cart.subtotal,
       discount_total: cart.discount_total,
       shipping_total: cart.shipping_total,
@@ -239,6 +239,8 @@ defmodule Mercato.Cart.Manager do
         {:error, changeset}
     end
   end
+
+  defp repo, do: Mercato.repo()
 
   defp schedule_persist do
     Process.send_after(self(), :persist, @persist_interval)

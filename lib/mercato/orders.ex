@@ -39,7 +39,7 @@ defmodule Mercato.Orders do
   import Ecto.Query, warn: false
   require Logger
 
-  alias Mercato.Repo
+  alias Mercato
   alias Mercato.Orders.{Order, OrderItem, OrderStatusHistory}
   alias Mercato.Cart
   alias Mercato.Catalog
@@ -61,8 +61,8 @@ defmodule Mercato.Orders do
   """
   def get_order!(order_id) do
     Order
-    |> Repo.get!(order_id)
-    |> Repo.preload([:items, :status_history])
+    |> repo().get!(order_id)
+    |> repo().preload([:items, :status_history])
   end
 
   @doc """
@@ -77,12 +77,12 @@ defmodule Mercato.Orders do
       {:error, :not_found}
   """
   def get_order(order_id) do
-    case Repo.get(Order, order_id) do
+    case repo().get(Order, order_id) do
       nil ->
         {:error, :not_found}
 
       order ->
-        order = Repo.preload(order, [:items, :status_history])
+        order = repo().preload(order, [:items, :status_history])
         {:ok, order}
     end
   end
@@ -138,8 +138,8 @@ defmodule Mercato.Orders do
         query
       end
 
-    Repo.all(query)
-    |> Repo.preload([:items, :status_history])
+    repo().all(query)
+    |> repo().preload([:items, :status_history])
   end
 
   @doc """
@@ -182,27 +182,32 @@ defmodule Mercato.Orders do
       {:error, :cart_not_found}
   """
   def create_order_from_cart(cart_id, attrs) do
-    Repo.transaction(fn ->
-      with {:ok, cart} <- Cart.get_cart(cart_id),
-           {:ok, order_number} <- generate_order_number(),
-           {:ok, payment_result} <- process_payment_if_requested(cart, attrs),
-           {:ok, order} <- create_order_from_cart_data(cart, order_number, attrs, payment_result),
-           {:ok, _order_items} <- create_order_items_from_cart(order, cart),
-           {:ok, _status_history} <- create_initial_status_history(order),
-           {:ok, _updated_cart} <- mark_cart_as_converted(cart) do
-        # Reserve inventory for order items
-        reserve_inventory_for_order(order)
+    result =
+      repo().transaction(fn ->
+        with {:ok, cart} <- Cart.get_cart(cart_id),
+             :ok <- validate_cart_not_empty(cart),
+             {:ok, order_number} <- generate_order_number(),
+             :ok <- reserve_inventory_for_cart(cart),
+             {:ok, payment_result} <- process_payment_if_requested(cart, attrs),
+             {:ok, order} <- create_order_from_cart_data(cart, order_number, attrs, payment_result),
+             {:ok, _order_items} <- create_order_items_from_cart(order, cart),
+             {:ok, _status_history} <- create_initial_status_history(order),
+             {:ok, _updated_cart} <- mark_cart_as_converted(cart) do
+          repo().preload(order, [:items, :status_history])
+        else
+          {:error, reason} ->
+            repo().rollback(reason)
+        end
+      end)
 
-        # Broadcast order created event
+    case result do
+      {:ok, order} ->
         Events.broadcast_order_created(order)
+        {:ok, order}
 
-        # Return order with preloaded associations
-        Repo.preload(order, [:items, :status_history])
-      else
-        {:error, reason} ->
-          Repo.rollback(reason)
-      end
-    end)
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @doc """
@@ -226,14 +231,14 @@ defmodule Mercato.Orders do
     changed_by = Keyword.get(opts, :changed_by)
     notes = Keyword.get(opts, :notes)
 
-    Repo.transaction(fn ->
+    repo().transaction(fn ->
       with {:ok, order} <- get_order(order_id) do
         old_status = order.status
 
         # Update order status
         case order
              |> Order.status_changeset(%{status: new_status})
-             |> Repo.update() do
+             |> repo().update() do
           {:ok, updated_order} ->
             # Create status history entry
             {:ok, _history} =
@@ -245,14 +250,14 @@ defmodule Mercato.Orders do
             # Broadcast status change event
             Events.broadcast_order_status_changed(updated_order, old_status, new_status)
 
-            Repo.preload(updated_order, [:items, :status_history], force: true)
+            repo().preload(updated_order, [:items, :status_history], force: true)
 
           {:error, changeset} ->
-            Repo.rollback(changeset)
+            repo().rollback(changeset)
         end
       else
         {:error, reason} ->
-          Repo.rollback(reason)
+          repo().rollback(reason)
       end
     end)
   end
@@ -406,8 +411,8 @@ defmodule Mercato.Orders do
   # Private Functions
 
   defp process_payment_if_requested(cart, attrs) do
-    process_payment = Map.get(attrs, :process_payment, true)
-    payment_details = Map.get(attrs, :payment_details)
+    process_payment = get_attr(attrs, :process_payment, true)
+    payment_details = get_attr(attrs, :payment_details)
 
     cond do
       not process_payment ->
@@ -476,7 +481,7 @@ defmodule Mercato.Orders do
     order_number = "ORD-#{timestamp}-#{random}"
 
     # Check if order number already exists (very unlikely but possible)
-    case Repo.get_by(Order, order_number: order_number) do
+    case repo().get_by(Order, order_number: order_number) do
       nil -> {:ok, order_number}
       _existing -> generate_order_number() # Retry with new number
     end
@@ -484,7 +489,8 @@ defmodule Mercato.Orders do
 
   defp create_order_from_cart_data(cart, order_number, attrs, payment_result) do
     # Set shipping address to billing address if not provided
-    shipping_address = Map.get(attrs, :shipping_address, attrs[:billing_address])
+    billing_address = get_attr(attrs, :billing_address)
+    shipping_address = get_attr(attrs, :shipping_address, billing_address)
 
     order_attrs =
       attrs
@@ -503,7 +509,7 @@ defmodule Mercato.Orders do
 
     %Order{}
     |> Order.create_changeset(order_attrs)
-    |> Repo.insert()
+    |> repo().insert()
   end
 
   defp create_order_items_from_cart(order, cart) do
@@ -525,7 +531,7 @@ defmodule Mercato.Orders do
         }
       end)
 
-    case Repo.insert_all(OrderItem, order_items, returning: true) do
+    case repo().insert_all(OrderItem, order_items, returning: true) do
       {_count, items} -> {:ok, items}
       error -> {:error, error}
     end
@@ -557,11 +563,34 @@ defmodule Mercato.Orders do
     |> OrderStatusHistory.changeset(%{
       order_id: order.id,
       from_status: nil,
-      to_status: "pending",
+      to_status: order.status,
       notes: "Order created",
       changed_at: DateTime.utc_now() |> DateTime.truncate(:second)
     })
-    |> Repo.insert()
+    |> repo().insert()
+  end
+
+  defp reserve_inventory_for_cart(cart) do
+    Enum.reduce_while(cart.items, :ok, fn item, :ok ->
+      opts = if item.variant_id, do: [variant_id: item.variant_id], else: []
+
+      case Catalog.reserve_stock(item.product_id, item.quantity, opts) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp validate_cart_not_empty(cart) do
+    if Enum.empty?(cart.items) do
+      {:error, :empty_cart}
+    else
+      :ok
+    end
+  end
+
+  defp get_attr(attrs, key, default \\ nil) when is_map(attrs) and is_atom(key) do
+    Map.get(attrs, key, Map.get(attrs, Atom.to_string(key), default))
   end
 
   defp create_status_history_entry(order_id, from_status, to_status, changed_by, notes) do
@@ -574,13 +603,13 @@ defmodule Mercato.Orders do
       changed_by: changed_by,
       changed_at: DateTime.utc_now() |> DateTime.truncate(:second)
     })
-    |> Repo.insert()
+    |> repo().insert()
   end
 
   defp mark_cart_as_converted(cart) do
     cart
     |> Cart.Cart.status_changeset(%{status: "converted"})
-    |> Repo.update()
+    |> repo().update()
   end
 
   defp handle_status_change(order, old_status, new_status) do
@@ -611,7 +640,7 @@ defmodule Mercato.Orders do
 
   defp reserve_inventory_for_order(order) do
     # Reserve stock for each order item
-    order = Repo.preload(order, :items)
+    order = repo().preload(order, :items)
 
     Enum.each(order.items, fn item ->
       opts = if item.variant_id, do: [variant_id: item.variant_id], else: []
@@ -648,7 +677,7 @@ defmodule Mercato.Orders do
       {:ok, %Order{}}
   """
   def create_order_from_subscription(subscription, attrs) do
-    Repo.transaction(fn ->
+    repo().transaction(fn ->
       with {:ok, order_number} <- generate_order_number(),
            {:ok, order} <- create_order_from_subscription_data(subscription, order_number, attrs),
            {:ok, _order_item} <- create_order_item_from_subscription(order, subscription) do
@@ -656,17 +685,17 @@ defmodule Mercato.Orders do
         Events.broadcast_order_created(order)
 
         # Return order with preloaded associations
-        Repo.preload(order, [:items, :status_history])
+        repo().preload(order, [:items, :status_history])
       else
         {:error, reason} ->
-          Repo.rollback(reason)
+          repo().rollback(reason)
       end
     end)
   end
 
   defp release_inventory_for_order(order) do
     # Release stock for each order item
-    order = Repo.preload(order, :items)
+    order = repo().preload(order, :items)
 
     Enum.each(order.items, fn item ->
       opts = if item.variant_id, do: [variant_id: item.variant_id], else: []
@@ -693,13 +722,16 @@ defmodule Mercato.Orders do
 
     %Order{}
     |> Order.create_changeset(order_attrs)
-    |> Repo.insert()
+    |> repo().insert()
   end
 
   defp create_order_item_from_subscription(order, subscription) do
     # Get product information for the subscription
-    product = Repo.get!(Mercato.Catalog.Product, subscription.product_id)
-    variant = if subscription.variant_id, do: Repo.get(Mercato.Catalog.ProductVariant, subscription.variant_id), else: nil
+    product = repo().get!(Mercato.Catalog.Product, subscription.product_id)
+    variant =
+      if subscription.variant_id,
+        do: repo().get(Mercato.Catalog.ProductVariant, subscription.variant_id),
+        else: nil
 
     # Create product snapshot
     product_snapshot = create_subscription_product_snapshot(product, variant)
@@ -714,7 +746,7 @@ defmodule Mercato.Orders do
       total_price: subscription.billing_amount,
       product_snapshot: product_snapshot
     })
-    |> Repo.insert()
+    |> repo().insert()
   end
 
   defp create_subscription_product_snapshot(product, variant) do
@@ -738,7 +770,7 @@ defmodule Mercato.Orders do
 
   defp create_referral_commission(order) do
     # Get the referral code to find the code string
-    case Repo.get(Mercato.Referrals.ReferralCode, order.referral_code_id) do
+    case repo().get(Mercato.Referrals.ReferralCode, order.referral_code_id) do
       nil ->
         Logger.warning("Referral code not found for order #{order.order_number}")
         :ok
@@ -755,4 +787,6 @@ defmodule Mercato.Orders do
         end
     end
   end
+
+  defp repo, do: Mercato.repo()
 end

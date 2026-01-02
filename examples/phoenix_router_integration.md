@@ -241,7 +241,7 @@ defmodule MyStoreWeb.CartController do
   alias Mercato.Cart
 
   def show(conn, %{"cart_token" => cart_token}) do
-    case Cart.get_cart(cart_token) do
+    case Cart.get_cart_by_token(cart_token) do
       {:ok, cart} ->
         render(conn, "show.json", cart: cart)
 

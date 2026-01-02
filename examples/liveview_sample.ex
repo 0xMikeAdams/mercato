@@ -10,7 +10,7 @@ defmodule YourAppWeb.CartLive do
       Events.subscribe_to_cart(cart_token)
     end
 
-    {:ok, cart} = Cart.get_cart(cart_token)
+    {:ok, cart} = Cart.get_cart_by_token(cart_token)
     {:ok, assign(socket, cart: cart)}
   end
 
@@ -27,7 +27,7 @@ defmodule YourAppWeb.CartLive do
     ~H"""
     <div>
       <h2>Shopping Cart</h2>
-      <div>Items: <%= length(@cart.cart_items) %></div>
+      <div>Items: <%= length(@cart.items) %></div>
       <div>Total: $<%= @cart.grand_total %></div>
     </div>
     """

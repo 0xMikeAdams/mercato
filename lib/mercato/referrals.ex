@@ -31,7 +31,7 @@ defmodule Mercato.Referrals do
   """
 
   import Ecto.Query, warn: false
-  alias Mercato.Repo
+  alias Mercato
   alias Mercato.Referrals.{ReferralCode, ReferralClick, Commission}
   alias Mercato.Orders.Order
 
@@ -65,7 +65,7 @@ defmodule Mercato.Referrals do
 
     %ReferralCode{}
     |> ReferralCode.changeset(attrs)
-    |> Repo.insert()
+    |> repo().insert()
   end
 
   @doc """
@@ -89,7 +89,7 @@ defmodule Mercato.Referrals do
     normalized_code = String.upcase(code)
     query = from rc in ReferralCode, where: rc.code == ^normalized_code and rc.status == "active"
 
-    case query |> maybe_preload(opts[:preload]) |> Repo.one() do
+    case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
       referral_code -> {:ok, referral_code}
     end
@@ -111,7 +111,7 @@ defmodule Mercato.Referrals do
   def get_referral_code_by_user(user_id, opts \\ []) do
     query = from rc in ReferralCode, where: rc.user_id == ^user_id
 
-    case query |> maybe_preload(opts[:preload]) |> Repo.one() do
+    case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
       referral_code -> {:ok, referral_code}
     end
@@ -142,7 +142,7 @@ defmodule Mercato.Referrals do
     |> filter_by_status(opts[:status])
     |> maybe_preload(opts[:preload])
     |> order_by([rc], desc: rc.inserted_at)
-    |> Repo.all()
+    |> repo().all()
   end
 
   defp filter_by_user_id(query, nil), do: query
@@ -177,7 +177,7 @@ defmodule Mercato.Referrals do
   """
   def track_click(code, metadata \\ %{}) do
     with {:ok, referral_code} <- get_referral_code(code) do
-      Repo.transaction(fn ->
+      repo().transaction(fn ->
         # Create click record
         {:ok, click} =
           %ReferralClick{}
@@ -186,12 +186,12 @@ defmodule Mercato.Referrals do
             |> Map.put(:referral_code_id, referral_code.id)
             |> Map.put(:clicked_at, DateTime.utc_now())
           )
-          |> Repo.insert()
+          |> repo().insert()
 
         # Increment click count
         referral_code
         |> Ecto.Changeset.change(clicks_count: referral_code.clicks_count + 1)
-        |> Repo.update!()
+        |> repo().update!()
 
         click
       end)
@@ -220,7 +220,7 @@ defmodule Mercato.Referrals do
   def track_conversion(code, order_id) do
     with {:ok, referral_code} <- get_referral_code(code),
          {:ok, order} <- get_order(order_id) do
-      Repo.transaction(fn ->
+      repo().transaction(fn ->
         commission_amount = calculate_commission(order, referral_code)
 
         # Create commission record
@@ -232,7 +232,7 @@ defmodule Mercato.Referrals do
             referee_id: order.user_id,
             amount: commission_amount
           })
-          |> Repo.insert()
+          |> repo().insert()
 
         # Update referral code statistics
         new_total_commission = Decimal.add(referral_code.total_commission, commission_amount)
@@ -242,7 +242,7 @@ defmodule Mercato.Referrals do
           conversions_count: referral_code.conversions_count + 1,
           total_commission: new_total_commission
         )
-        |> Repo.update!()
+        |> repo().update!()
 
         commission
       end)
@@ -393,7 +393,7 @@ defmodule Mercato.Referrals do
     |> maybe_limit_commissions(opts[:limit])
     |> order_by([c], desc: c.inserted_at)
     |> maybe_preload(opts[:preload])
-    |> Repo.all()
+    |> repo().all()
   end
 
   defp filter_commissions_by_referral_code(query, nil), do: query
@@ -440,7 +440,7 @@ defmodule Mercato.Referrals do
 
     commission
     |> Commission.changeset(attrs)
-    |> Repo.update()
+    |> repo().update()
   end
 
   ## Private Helper Functions
@@ -449,7 +449,7 @@ defmodule Mercato.Referrals do
   defp generate_unique_code do
     code = generate_random_code()
 
-    case Repo.get_by(ReferralCode, code: code) do
+    case repo().get_by(ReferralCode, code: code) do
       nil -> code
       _ -> generate_unique_code() # Retry if code already exists
     end
@@ -464,9 +464,11 @@ defmodule Mercato.Referrals do
 
   # Gets an order by ID
   defp get_order(order_id) do
-    case Repo.get(Order, order_id) do
+    case repo().get(Order, order_id) do
       nil -> {:error, :order_not_found}
       order -> {:ok, order}
     end
   end
+
+  defp repo, do: Mercato.repo()
 end

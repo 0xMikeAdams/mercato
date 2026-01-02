@@ -30,7 +30,7 @@ defmodule Mercato.Coupons do
   """
 
   import Ecto.Query, warn: false
-  alias Mercato.Repo
+  alias Mercato
   alias Mercato.Coupons.{Coupon, CouponUsage}
   alias Mercato.Cart.Cart
 
@@ -60,7 +60,7 @@ defmodule Mercato.Coupons do
     |> filter_by_discount_type(opts[:discount_type])
     |> filter_by_status(opts[:status])
     |> maybe_preload(opts[:preload])
-    |> Repo.all()
+    |> repo().all()
   end
 
   defp filter_by_discount_type(query, nil), do: query
@@ -119,7 +119,7 @@ defmodule Mercato.Coupons do
 
     query
     |> maybe_preload(opts[:preload])
-    |> Repo.one!()
+    |> repo().one!()
   end
 
   @doc """
@@ -139,7 +139,7 @@ defmodule Mercato.Coupons do
     normalized_code = String.upcase(code)
     query = from c in Coupon, where: c.code == ^normalized_code
 
-    case query |> maybe_preload(opts[:preload]) |> Repo.one() do
+    case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
       coupon -> {:ok, coupon}
     end
@@ -159,7 +159,7 @@ defmodule Mercato.Coupons do
   def create_coupon(attrs \\ %{}) do
     %Coupon{}
     |> Coupon.changeset(attrs)
-    |> Repo.insert()
+    |> repo().insert()
   end
 
   @doc """
@@ -176,7 +176,7 @@ defmodule Mercato.Coupons do
   def update_coupon(%Coupon{} = coupon, attrs) do
     coupon
     |> Coupon.changeset(attrs)
-    |> Repo.update()
+    |> repo().update()
   end
 
   @doc """
@@ -191,7 +191,7 @@ defmodule Mercato.Coupons do
       {:error, %Ecto.Changeset{}}
   """
   def delete_coupon(%Coupon{} = coupon) do
-    Repo.delete(coupon)
+    repo().delete(coupon)
   end
 
   @doc """
@@ -295,7 +295,7 @@ defmodule Mercato.Coupons do
          Enum.empty?(coupon.excluded_category_ids) do
       :ok
     else
-      cart = Repo.preload(cart, items: [product: :categories])
+      cart = repo().preload(cart, items: [product: :categories])
       eligible_items = get_eligible_cart_items(coupon, cart.items)
 
       if Enum.empty?(eligible_items) do
@@ -312,7 +312,7 @@ defmodule Mercato.Coupons do
       where: cu.coupon_id == ^coupon_id and cu.user_id == ^user_id,
       select: count(cu.id)
     )
-    |> Repo.one()
+    |> repo().one()
   end
 
   # Filters cart items to only those eligible for the coupon discount
@@ -385,7 +385,7 @@ defmodule Mercato.Coupons do
   end
 
   defp calculate_discount_amount(%Coupon{discount_type: "fixed_product"} = coupon, %Cart{} = cart) do
-    cart = Repo.preload(cart, items: [product: :categories])
+    cart = repo().preload(cart, items: [product: :categories])
     eligible_items = get_eligible_cart_items(coupon, cart.items)
 
     eligible_items
@@ -415,7 +415,7 @@ defmodule Mercato.Coupons do
          Enum.empty?(coupon.excluded_category_ids) do
       cart.subtotal
     else
-      cart = Repo.preload(cart, items: [product: :categories])
+      cart = repo().preload(cart, items: [product: :categories])
       eligible_items = get_eligible_cart_items(coupon, cart.items)
 
       eligible_items
@@ -441,7 +441,7 @@ defmodule Mercato.Coupons do
       {:ok, %CouponUsage{}}
   """
   def record_coupon_usage(%Coupon{} = coupon, order_id, user_id \\ nil) do
-    Repo.transaction(fn ->
+    repo().transaction(fn ->
       # Create usage record
       {:ok, usage} =
         %CouponUsage{}
@@ -451,12 +451,12 @@ defmodule Mercato.Coupons do
           order_id: order_id,
           used_at: DateTime.utc_now()
         })
-        |> Repo.insert()
+        |> repo().insert()
 
       # Increment usage count
       coupon
       |> Ecto.Changeset.change(usage_count: coupon.usage_count + 1)
-      |> Repo.update!()
+      |> repo().update!()
 
       usage
     end)
@@ -477,7 +477,7 @@ defmodule Mercato.Coupons do
       }
   """
   def get_coupon_usage_stats(%Coupon{} = coupon) do
-    usages = Repo.all(from cu in CouponUsage, where: cu.coupon_id == ^coupon.id)
+    usages = repo().all(from cu in CouponUsage, where: cu.coupon_id == ^coupon.id)
 
     %{
       total_uses: length(usages),
@@ -510,7 +510,7 @@ defmodule Mercato.Coupons do
     |> filter_usages_by_order(opts[:order_id])
     |> maybe_limit(opts[:limit])
     |> order_by([cu], desc: cu.used_at)
-    |> Repo.all()
+    |> repo().all()
   end
 
   defp filter_usages_by_coupon(query, nil), do: query
@@ -524,4 +524,6 @@ defmodule Mercato.Coupons do
 
   defp maybe_limit(query, nil), do: query
   defp maybe_limit(query, limit), do: from(cu in query, limit: ^limit)
+
+  defp repo, do: Mercato.repo()
 end

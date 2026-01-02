@@ -38,6 +38,7 @@ defmodule Mercato.Subscriptions.Scheduler do
   use GenServer
   require Logger
 
+  alias Mercato
   alias Mercato.Subscriptions
 
   # Default configuration
@@ -218,6 +219,10 @@ defmodule Mercato.Subscriptions.Scheduler do
   end
 
   defp do_process_renewals(state) do
+    if not Mercato.repo_started?() do
+      Logger.info("Subscription renewal processing skipped (repo not started)")
+      {0, %{state.stats | last_run_processed: 0, last_run_successful: 0, last_run_failed: 0}}
+    else
     start_time = System.monotonic_time(:millisecond)
 
     Logger.info("Starting subscription renewal processing")
@@ -253,6 +258,7 @@ defmodule Mercato.Subscriptions.Scheduler do
     }
 
     {total_count, new_stats}
+    end
   end
 
   defp process_subscriptions_in_batches(subscriptions, batch_size) do

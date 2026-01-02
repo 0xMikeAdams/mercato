@@ -80,9 +80,10 @@ defmodule Mercato.Events do
       end
   """
 
+  alias Mercato
   alias Phoenix.PubSub
 
-  @pubsub Mercato.PubSub
+  defp pubsub, do: Mercato.pubsub()
 
   # Cart Events
 
@@ -90,49 +91,49 @@ defmodule Mercato.Events do
   Subscribes the current process to cart events for the given cart ID.
   """
   def subscribe_to_cart(cart_id) do
-    PubSub.subscribe(@pubsub, "cart:#{cart_id}")
+    PubSub.subscribe(pubsub(), "cart:#{cart_id}")
   end
 
   @doc """
   Unsubscribes the current process from cart events for the given cart ID.
   """
   def unsubscribe_from_cart(cart_id) do
-    PubSub.unsubscribe(@pubsub, "cart:#{cart_id}")
+    PubSub.unsubscribe(pubsub(), "cart:#{cart_id}")
   end
 
   @doc """
   Broadcasts a cart updated event.
   """
   def broadcast_cart_updated(cart) do
-    PubSub.broadcast(@pubsub, "cart:#{cart.id}", {:cart_updated, cart})
+    PubSub.broadcast(pubsub(), "cart:#{cart.id}", {:cart_updated, cart})
   end
 
   @doc """
   Broadcasts a cart cleared event.
   """
   def broadcast_cart_cleared(cart_id) do
-    PubSub.broadcast(@pubsub, "cart:#{cart_id}", {:cart_cleared, cart_id})
+    PubSub.broadcast(pubsub(), "cart:#{cart_id}", {:cart_cleared, cart_id})
   end
 
   @doc """
   Broadcasts a cart item added event.
   """
   def broadcast_cart_item_added(cart, item) do
-    PubSub.broadcast(@pubsub, "cart:#{cart.id}", {:cart_item_added, cart, item})
+    PubSub.broadcast(pubsub(), "cart:#{cart.id}", {:cart_item_added, cart, item})
   end
 
   @doc """
   Broadcasts a cart item removed event.
   """
   def broadcast_cart_item_removed(cart, item_id) do
-    PubSub.broadcast(@pubsub, "cart:#{cart.id}", {:cart_item_removed, cart, item_id})
+    PubSub.broadcast(pubsub(), "cart:#{cart.id}", {:cart_item_removed, cart, item_id})
   end
 
   @doc """
   Broadcasts a cart coupon applied event.
   """
   def broadcast_cart_coupon_applied(cart, coupon) do
-    PubSub.broadcast(@pubsub, "cart:#{cart.id}", {:cart_coupon_applied, cart, coupon})
+    PubSub.broadcast(pubsub(), "cart:#{cart.id}", {:cart_coupon_applied, cart, coupon})
   end
 
   # Order Events
@@ -141,21 +142,21 @@ defmodule Mercato.Events do
   Subscribes the current process to order events for the given order ID.
   """
   def subscribe_to_order(order_id) do
-    PubSub.subscribe(@pubsub, "order:#{order_id}")
+    PubSub.subscribe(pubsub(), "order:#{order_id}")
   end
 
   @doc """
   Unsubscribes the current process from order events for the given order ID.
   """
   def unsubscribe_from_order(order_id) do
-    PubSub.unsubscribe(@pubsub, "order:#{order_id}")
+    PubSub.unsubscribe(pubsub(), "order:#{order_id}")
   end
 
   @doc """
   Broadcasts an order created event.
   """
   def broadcast_order_created(order) do
-    PubSub.broadcast(@pubsub, "order:#{order.id}", {:order_created, order})
+    PubSub.broadcast(pubsub(), "order:#{order.id}", {:order_created, order})
   end
 
   @doc """
@@ -163,7 +164,7 @@ defmodule Mercato.Events do
   """
   def broadcast_order_status_changed(order, old_status, new_status) do
     PubSub.broadcast(
-      @pubsub,
+      pubsub(),
       "order:#{order.id}",
       {:order_status_changed, order, old_status, new_status}
     )
@@ -173,14 +174,14 @@ defmodule Mercato.Events do
   Broadcasts an order cancelled event.
   """
   def broadcast_order_cancelled(order) do
-    PubSub.broadcast(@pubsub, "order:#{order.id}", {:order_cancelled, order})
+    PubSub.broadcast(pubsub(), "order:#{order.id}", {:order_cancelled, order})
   end
 
   @doc """
   Broadcasts an order refunded event.
   """
   def broadcast_order_refunded(order, amount) do
-    PubSub.broadcast(@pubsub, "order:#{order.id}", {:order_refunded, order, amount})
+    PubSub.broadcast(pubsub(), "order:#{order.id}", {:order_refunded, order, amount})
   end
 
   # Inventory Events
@@ -189,35 +190,35 @@ defmodule Mercato.Events do
   Subscribes the current process to inventory events for the given product ID.
   """
   def subscribe_to_inventory(product_id) do
-    PubSub.subscribe(@pubsub, "inventory:#{product_id}")
+    PubSub.subscribe(pubsub(), "inventory:#{product_id}")
   end
 
   @doc """
   Unsubscribes the current process from inventory events for the given product ID.
   """
   def unsubscribe_from_inventory(product_id) do
-    PubSub.unsubscribe(@pubsub, "inventory:#{product_id}")
+    PubSub.unsubscribe(pubsub(), "inventory:#{product_id}")
   end
 
   @doc """
   Broadcasts a stock reserved event.
   """
   def broadcast_stock_reserved(product_id, quantity) do
-    PubSub.broadcast(@pubsub, "inventory:#{product_id}", {:stock_reserved, product_id, quantity})
+    PubSub.broadcast(pubsub(), "inventory:#{product_id}", {:stock_reserved, product_id, quantity})
   end
 
   @doc """
   Broadcasts a stock released event.
   """
   def broadcast_stock_released(product_id, quantity) do
-    PubSub.broadcast(@pubsub, "inventory:#{product_id}", {:stock_released, product_id, quantity})
+    PubSub.broadcast(pubsub(), "inventory:#{product_id}", {:stock_released, product_id, quantity})
   end
 
   @doc """
   Broadcasts a stock updated event.
   """
   def broadcast_stock_updated(product_id, new_quantity) do
-    PubSub.broadcast(@pubsub, "inventory:#{product_id}", {:stock_updated, product_id, new_quantity})
+    PubSub.broadcast(pubsub(), "inventory:#{product_id}", {:stock_updated, product_id, new_quantity})
   end
 
   # Subscription Events
@@ -226,21 +227,21 @@ defmodule Mercato.Events do
   Subscribes the current process to subscription events for the given subscription ID.
   """
   def subscribe_to_subscription(subscription_id) do
-    PubSub.subscribe(@pubsub, "subscription:#{subscription_id}")
+    PubSub.subscribe(pubsub(), "subscription:#{subscription_id}")
   end
 
   @doc """
   Unsubscribes the current process from subscription events for the given subscription ID.
   """
   def unsubscribe_from_subscription(subscription_id) do
-    PubSub.unsubscribe(@pubsub, "subscription:#{subscription_id}")
+    PubSub.unsubscribe(pubsub(), "subscription:#{subscription_id}")
   end
 
   @doc """
   Broadcasts a subscription created event.
   """
   def broadcast_subscription_created(subscription) do
-    PubSub.broadcast(@pubsub, "subscription:#{subscription.id}", {:subscription_created, subscription})
+    PubSub.broadcast(pubsub(), "subscription:#{subscription.id}", {:subscription_created, subscription})
   end
 
   @doc """
@@ -248,7 +249,7 @@ defmodule Mercato.Events do
   """
   def broadcast_subscription_renewed(subscription, order) do
     PubSub.broadcast(
-      @pubsub,
+      pubsub(),
       "subscription:#{subscription.id}",
       {:subscription_renewed, subscription, order}
     )
@@ -258,21 +259,21 @@ defmodule Mercato.Events do
   Broadcasts a subscription paused event.
   """
   def broadcast_subscription_paused(subscription) do
-    PubSub.broadcast(@pubsub, "subscription:#{subscription.id}", {:subscription_paused, subscription})
+    PubSub.broadcast(pubsub(), "subscription:#{subscription.id}", {:subscription_paused, subscription})
   end
 
   @doc """
   Broadcasts a subscription resumed event.
   """
   def broadcast_subscription_resumed(subscription) do
-    PubSub.broadcast(@pubsub, "subscription:#{subscription.id}", {:subscription_resumed, subscription})
+    PubSub.broadcast(pubsub(), "subscription:#{subscription.id}", {:subscription_resumed, subscription})
   end
 
   @doc """
   Broadcasts a subscription cancelled event.
   """
   def broadcast_subscription_cancelled(subscription) do
-    PubSub.broadcast(@pubsub, "subscription:#{subscription.id}", {:subscription_cancelled, subscription})
+    PubSub.broadcast(pubsub(), "subscription:#{subscription.id}", {:subscription_cancelled, subscription})
   end
 
   # Referral Events
@@ -281,28 +282,28 @@ defmodule Mercato.Events do
   Subscribes the current process to referral events for the given referral code ID.
   """
   def subscribe_to_referral(referral_code_id) do
-    PubSub.subscribe(@pubsub, "referral:#{referral_code_id}")
+    PubSub.subscribe(pubsub(), "referral:#{referral_code_id}")
   end
 
   @doc """
   Unsubscribes the current process from referral events for the given referral code ID.
   """
   def unsubscribe_from_referral(referral_code_id) do
-    PubSub.unsubscribe(@pubsub, "referral:#{referral_code_id}")
+    PubSub.unsubscribe(pubsub(), "referral:#{referral_code_id}")
   end
 
   @doc """
   Broadcasts a referral click event.
   """
   def broadcast_referral_click(referral_code_id, click_metadata) do
-    PubSub.broadcast(@pubsub, "referral:#{referral_code_id}", {:referral_click, click_metadata})
+    PubSub.broadcast(pubsub(), "referral:#{referral_code_id}", {:referral_click, click_metadata})
   end
 
   @doc """
   Broadcasts a referral click tracked event.
   """
   def broadcast_referral_click_tracked(referral_code_id, click) do
-    PubSub.broadcast(@pubsub, "referral:#{referral_code_id}", {:referral_click_tracked, click})
+    PubSub.broadcast(pubsub(), "referral:#{referral_code_id}", {:referral_click_tracked, click})
   end
 
   @doc """
@@ -310,7 +311,7 @@ defmodule Mercato.Events do
   """
   def broadcast_referral_conversion_tracked(referral_code_id, commission) do
     PubSub.broadcast(
-      @pubsub,
+      pubsub(),
       "referral:#{referral_code_id}",
       {:referral_conversion_tracked, commission}
     )
@@ -332,7 +333,7 @@ defmodule Mercato.Events do
         alias Mercato.Events
 
         def mount(_params, %{"cart_token" => cart_token}, socket) do
-          cart = Mercato.Cart.get_cart(cart_token)
+          {:ok, cart} = Mercato.Cart.get_cart_by_token(cart_token)
           Events.subscribe_to_cart_liveview(cart.id, self())
 
           {:ok, assign(socket, cart: cart)}
@@ -571,7 +572,7 @@ defmodule Mercato.Events do
         alias Mercato.Events
 
         def mount(_params, %{"cart_token" => cart_token}, socket) do
-          cart = Mercato.Cart.get_cart(cart_token)
+          {:ok, cart} = Mercato.Cart.get_cart_by_token(cart_token)
           Events.subscribe_to_cart_liveview(cart.id)
 
           {:ok, assign(socket, cart: cart)}

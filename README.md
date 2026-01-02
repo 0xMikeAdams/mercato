@@ -1,7 +1,7 @@
 # Mercato
 
-[![Hex.pm](https://img.shields.io/hexpm/v/mercato.svg)](https://hex.pm/packages/mercato)
-[![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/mercato)
+<!-- [![Hex.pm](https://img.shields.io/hexpm/v/mercato.svg)](https://hex.pm/packages/mercato)
+[![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/mercato) -->
 
 A production-ready, open-source e-commerce engine for Elixir/Phoenix applications. Mercato provides comprehensive WooCommerce-level functionality built idiomatically with Elixir, Ecto, and Phoenix, featuring real-time capabilities and extensible architecture.
 
@@ -38,55 +38,30 @@ mix mercato.install
 
 The installation command will:
 - Copy all necessary migrations to your application
-- Generate configuration templates
-- Create sample integration files
-- Display setup instructions
+- Create/update `config/mercato.exs` and import it from `config/config.exs`
+- Inject a minimal API and referral routes into your Phoenix router
 
 ## Quick Setup
 
-### 1. Configuration
+### 1. Run Migrations
 
-Add Mercato configuration to your `config/config.exs`:
+After `mix mercato.install`, run:
+
+```bash
+mix ecto.migrate
+```
+
+### 2. Review Config
+
+The installer creates `config/mercato.exs` and sets:
 
 ```elixir
-config :mercato, Mercato.Repo,
-  database: "your_app_dev",
-  username: "postgres",
-  password: "postgres",
-  hostname: "localhost"
-
 config :mercato,
-  ecto_repos: [Mercato.Repo],
-  # Optional: Configure custom behaviours
+  repo: MyApp.Repo,
+  pubsub: MyApp.PubSub,
   payment_gateway: Mercato.PaymentGateways.Dummy,
   shipping_calculator: Mercato.ShippingCalculators.FlatRate,
   tax_calculator: Mercato.TaxCalculators.Simple
-```
-
-### 2. Application Setup
-
-Add Mercato to your application supervision tree in `lib/your_app/application.ex`:
-
-```elixir
-def start(_type, _args) do
-  children = [
-    # ... your existing children
-    Mercato.Repo,
-    {Phoenix.PubSub, name: Mercato.PubSub}
-  ]
-
-  opts = [strategy: :one_for_one, name: YourApp.Supervisor]
-  Supervisor.start_link(children, opts)
-end
-```
-
-### 3. Database Setup
-
-Run the migrations:
-
-```bash
-mix ecto.create
-mix ecto.migrate
 ```
 
 ## Getting Started
@@ -171,7 +146,7 @@ defmodule YourAppWeb.CartLive do
       Events.subscribe_to_cart(cart_token)
     end
 
-    {:ok, cart} = Cart.get_cart(cart_token)
+    {:ok, cart} = Cart.get_cart_by_token(cart_token)
     {:ok, assign(socket, cart: cart, cart_token: cart_token)}
   end
 
@@ -264,32 +239,7 @@ config :mercato,
 
 ### Environment-Specific Configuration
 
-#### Development (`config/dev.exs`)
-
-```elixir
-config :mercato, Mercato.Repo,
-  database: "your_app_dev",
-  show_sensitive_data_on_connection_error: true,
-  pool_size: 10
-```
-
-#### Test (`config/test.exs`)
-
-```elixir
-config :mercato, Mercato.Repo,
-  database: "your_app_test#{System.get_env("MIX_TEST_PARTITION")}",
-  pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: 10
-```
-
-#### Production (`config/prod.exs`)
-
-```elixir
-config :mercato, Mercato.Repo,
-  url: database_url,
-  pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-  ssl: true
-```
+Mercato runs on whatever repo you configure via `config :mercato, :repo` (the installer sets this to `MyApp.Repo`). Configure your repo normally in `config/dev.exs`, `config/test.exs`, and `config/runtime.exs`.
 
 ## API Overview
 
@@ -331,7 +281,7 @@ product = Mercato.Catalog.get_product!("product-id")
 
 ```elixir
 # Get or create cart
-{:ok, cart} = Mercato.Cart.get_cart("session-token")
+{:ok, cart} = Mercato.Cart.get_cart_by_token("session-token")
 
 # Add items
 {:ok, cart} = Mercato.Cart.add_item(cart.id, product_id, 2)
@@ -418,4 +368,3 @@ Full documentation is available at [https://hexdocs.pm/mercato](https://hexdocs.
 - 📖 [Documentation](https://hexdocs.pm/mercato)
 - 🐛 [Issue Tracker](https://github.com/yourusername/mercato/issues)
 - 💬 [Discussions](https://github.com/yourusername/mercato/discussions)
-

@@ -114,9 +114,9 @@ defmodule Mercato.MixProject do
           Mercato.Subscriptions.Subscription
         ],
         "Behaviors": [
-          Mercato.PaymentGateway,
-          Mercato.ShippingCalculator,
-          Mercato.TaxCalculator
+          Mercato.Behaviours.PaymentGateway,
+          Mercato.Behaviours.ShippingCalculator,
+          Mercato.Behaviours.TaxCalculator
         ],
         "Phoenix Integration": [
           Mercato.Router,

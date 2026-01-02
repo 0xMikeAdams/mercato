@@ -340,7 +340,7 @@ defmodule MyStoreWeb.ProductLive.Index do
   defp update_cart_count(socket) do
     cart_token = get_cart_token(socket)
     
-    case Mercato.Cart.get_cart(cart_token) do
+    case Mercato.Cart.get_cart_by_token(cart_token) do
       {:ok, cart} ->
         count = Enum.sum(Enum.map(cart.cart_items, & &1.quantity))
         assign(socket, :cart_count, count)

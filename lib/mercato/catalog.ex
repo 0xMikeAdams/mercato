@@ -32,7 +32,7 @@ defmodule Mercato.Catalog do
   """
 
   import Ecto.Query, warn: false
-  alias Mercato.Repo
+  alias Mercato
   alias Mercato.Catalog.{Product, ProductVariant, Category, Tag}
 
   ## Product Management
@@ -61,7 +61,7 @@ defmodule Mercato.Catalog do
     |> filter_by_status(opts[:status])
     |> filter_by_product_type(opts[:product_type])
     |> maybe_preload(opts[:preload])
-    |> Repo.all()
+    |> repo().all()
   end
 
   defp filter_by_status(query, nil), do: query
@@ -95,7 +95,7 @@ defmodule Mercato.Catalog do
 
     query
     |> maybe_preload(opts[:preload])
-    |> Repo.one!()
+    |> repo().one!()
   end
 
   @doc """
@@ -114,7 +114,7 @@ defmodule Mercato.Catalog do
   def get_product_by_slug(slug, opts \\ []) do
     query = from p in Product, where: p.slug == ^slug
 
-    case query |> maybe_preload(opts[:preload]) |> Repo.one() do
+    case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
       product -> {:ok, product}
     end
@@ -134,7 +134,7 @@ defmodule Mercato.Catalog do
   def create_product(attrs \\ %{}) do
     %Product{}
     |> Product.changeset(attrs)
-    |> Repo.insert()
+    |> repo().insert()
   end
 
   @doc """
@@ -151,7 +151,7 @@ defmodule Mercato.Catalog do
   def update_product(%Product{} = product, attrs) do
     product
     |> Product.changeset(attrs)
-    |> Repo.update()
+    |> repo().update()
   end
 
   @doc """
@@ -166,7 +166,7 @@ defmodule Mercato.Catalog do
       {:error, %Ecto.Changeset{}}
   """
   def delete_product(%Product{} = product) do
-    Repo.delete(product)
+    repo().delete(product)
   end
 
   @doc """
@@ -193,7 +193,7 @@ defmodule Mercato.Catalog do
   """
   def list_variants(product_id) do
     from(v in ProductVariant, where: v.product_id == ^product_id)
-    |> Repo.all()
+    |> repo().all()
   end
 
   @doc """
@@ -210,7 +210,7 @@ defmodule Mercato.Catalog do
       {:error, :not_found}
   """
   def get_variant(id) do
-    case Repo.get(ProductVariant, id) do
+    case repo().get(ProductVariant, id) do
       nil -> {:error, :not_found}
       variant -> {:ok, variant}
     end
@@ -232,7 +232,7 @@ defmodule Mercato.Catalog do
 
     %ProductVariant{}
     |> ProductVariant.changeset(attrs)
-    |> Repo.insert()
+    |> repo().insert()
   end
 
   @doc """
@@ -249,7 +249,7 @@ defmodule Mercato.Catalog do
   def update_variant(%ProductVariant{} = variant, attrs) do
     variant
     |> ProductVariant.changeset(attrs)
-    |> Repo.update()
+    |> repo().update()
   end
 
   @doc """
@@ -261,7 +261,7 @@ defmodule Mercato.Catalog do
       {:ok, %ProductVariant{}}
   """
   def delete_variant(%ProductVariant{} = variant) do
-    Repo.delete(variant)
+    repo().delete(variant)
   end
 
   ## Category Management
@@ -284,7 +284,7 @@ defmodule Mercato.Catalog do
   def list_categories(opts \\ []) do
     from(c in Category)
     |> maybe_preload(opts[:preload])
-    |> Repo.all()
+    |> repo().all()
   end
 
   @doc """
@@ -300,7 +300,7 @@ defmodule Mercato.Catalog do
   def get_category(id, opts \\ []) do
     query = from c in Category, where: c.id == ^id
 
-    case query |> maybe_preload(opts[:preload]) |> Repo.one() do
+    case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
       category -> {:ok, category}
     end
@@ -317,7 +317,7 @@ defmodule Mercato.Catalog do
   def create_category(attrs \\ %{}) do
     %Category{}
     |> Category.changeset(attrs)
-    |> Repo.insert()
+    |> repo().insert()
   end
 
   @doc """
@@ -331,7 +331,7 @@ defmodule Mercato.Catalog do
   def update_category(%Category{} = category, attrs) do
     category
     |> Category.changeset(attrs)
-    |> Repo.update()
+    |> repo().update()
   end
 
   @doc """
@@ -343,7 +343,7 @@ defmodule Mercato.Catalog do
       {:ok, %Category{}}
   """
   def delete_category(%Category{} = category) do
-    Repo.delete(category)
+    repo().delete(category)
   end
 
   ## Tag Management
@@ -363,7 +363,7 @@ defmodule Mercato.Catalog do
   def list_tags(opts \\ []) do
     from(t in Tag)
     |> maybe_preload(opts[:preload])
-    |> Repo.all()
+    |> repo().all()
   end
 
   @doc """
@@ -379,7 +379,7 @@ defmodule Mercato.Catalog do
   def get_tag(id, opts \\ []) do
     query = from t in Tag, where: t.id == ^id
 
-    case query |> maybe_preload(opts[:preload]) |> Repo.one() do
+    case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
       tag -> {:ok, tag}
     end
@@ -396,7 +396,7 @@ defmodule Mercato.Catalog do
   def create_tag(attrs \\ %{}) do
     %Tag{}
     |> Tag.changeset(attrs)
-    |> Repo.insert()
+    |> repo().insert()
   end
 
   @doc """
@@ -410,7 +410,7 @@ defmodule Mercato.Catalog do
   def update_tag(%Tag{} = tag, attrs) do
     tag
     |> Tag.changeset(attrs)
-    |> Repo.update()
+    |> repo().update()
   end
 
   @doc """
@@ -422,7 +422,7 @@ defmodule Mercato.Catalog do
       {:ok, %Tag{}}
   """
   def delete_tag(%Tag{} = tag) do
-    Repo.delete(tag)
+    repo().delete(tag)
   end
 
   ## Category and Tag Associations
@@ -438,13 +438,13 @@ defmodule Mercato.Catalog do
       {:ok, %Product{}}
   """
   def set_product_categories(%Product{} = product, category_ids) do
-    product = Repo.preload(product, :categories)
-    categories = Repo.all(from c in Category, where: c.id in ^category_ids)
+    product = repo().preload(product, :categories)
+    categories = repo().all(from c in Category, where: c.id in ^category_ids)
 
     product
     |> Ecto.Changeset.change()
     |> Ecto.Changeset.put_assoc(:categories, categories)
-    |> Repo.update()
+    |> repo().update()
   end
 
   @doc """
@@ -458,13 +458,13 @@ defmodule Mercato.Catalog do
       {:ok, %Product{}}
   """
   def set_product_tags(%Product{} = product, tag_ids) do
-    product = Repo.preload(product, :tags)
-    tags = Repo.all(from t in Tag, where: t.id in ^tag_ids)
+    product = repo().preload(product, :tags)
+    tags = repo().all(from t in Tag, where: t.id in ^tag_ids)
 
     product
     |> Ecto.Changeset.change()
     |> Ecto.Changeset.put_assoc(:tags, tags)
-    |> Repo.update()
+    |> repo().update()
   end
 
   @doc """
@@ -476,7 +476,7 @@ defmodule Mercato.Catalog do
       {:ok, %Product{}}
   """
   def add_product_category(%Product{} = product, category_id) do
-    product = Repo.preload(product, :categories)
+    product = repo().preload(product, :categories)
     {:ok, category} = get_category(category_id)
 
     if category in product.categories do
@@ -485,7 +485,7 @@ defmodule Mercato.Catalog do
       product
       |> Ecto.Changeset.change()
       |> Ecto.Changeset.put_assoc(:categories, [category | product.categories])
-      |> Repo.update()
+      |> repo().update()
     end
   end
 
@@ -498,7 +498,7 @@ defmodule Mercato.Catalog do
       {:ok, %Product{}}
   """
   def add_product_tag(%Product{} = product, tag_id) do
-    product = Repo.preload(product, :tags)
+    product = repo().preload(product, :tags)
     {:ok, tag} = get_tag(tag_id)
 
     if tag in product.tags do
@@ -507,7 +507,7 @@ defmodule Mercato.Catalog do
       product
       |> Ecto.Changeset.change()
       |> Ecto.Changeset.put_assoc(:tags, [tag | product.tags])
-      |> Repo.update()
+      |> repo().update()
     end
   end
 
@@ -520,13 +520,13 @@ defmodule Mercato.Catalog do
       {:ok, %Product{}}
   """
   def remove_product_category(%Product{} = product, category_id) do
-    product = Repo.preload(product, :categories)
+    product = repo().preload(product, :categories)
     categories = Enum.reject(product.categories, &(&1.id == category_id))
 
     product
     |> Ecto.Changeset.change()
     |> Ecto.Changeset.put_assoc(:categories, categories)
-    |> Repo.update()
+    |> repo().update()
   end
 
   @doc """
@@ -538,13 +538,13 @@ defmodule Mercato.Catalog do
       {:ok, %Product{}}
   """
   def remove_product_tag(%Product{} = product, tag_id) do
-    product = Repo.preload(product, :tags)
+    product = repo().preload(product, :tags)
     tags = Enum.reject(product.tags, &(&1.id == tag_id))
 
     product
     |> Ecto.Changeset.change()
     |> Ecto.Changeset.put_assoc(:tags, tags)
-    |> Repo.update()
+    |> repo().update()
   end
 
   ## Inventory Management
@@ -572,13 +572,13 @@ defmodule Mercato.Catalog do
   def check_stock(product_id, opts \\ []) do
     case opts[:variant_id] do
       nil ->
-        case Repo.get(Product, product_id) do
+        case repo().get(Product, product_id) do
           nil -> {:error, :not_found}
           product -> {:ok, product.stock_quantity}
         end
 
       variant_id ->
-        case Repo.get(ProductVariant, variant_id) do
+        case repo().get(ProductVariant, variant_id) do
           nil -> {:error, :not_found}
           variant -> {:ok, variant.stock_quantity}
         end
@@ -611,44 +611,60 @@ defmodule Mercato.Catalog do
       :ok
   """
   def reserve_stock(product_id, quantity, opts \\ []) when quantity > 0 do
-    Repo.transaction(fn ->
+    negative_quantity = -quantity
+
+    try do
       case opts[:variant_id] do
         nil ->
-          product = Repo.get!(Product, product_id)
+          case repo().get(Product, product_id) do
+            nil ->
+              {:error, :not_found}
 
-          if product.manage_stock && product.stock_quantity < quantity do
-            Repo.rollback(:insufficient_stock)
-          else
-            if product.manage_stock do
-              product
-              |> Ecto.Changeset.change(stock_quantity: product.stock_quantity - quantity)
-              |> Repo.update!()
-            end
+            %Product{manage_stock: false} ->
+              :ok
 
-            :ok
+            %Product{manage_stock: true} ->
+              {count, _} =
+                from(p in Product,
+                  where: p.id == ^product_id and p.stock_quantity >= ^quantity,
+                  update: [inc: [stock_quantity: ^negative_quantity]]
+                )
+                |> repo().update_all([])
+
+              if count == 1, do: :ok, else: {:error, :insufficient_stock}
+
+            %Product{} ->
+              # Defensive: treat unexpected values as stock-managed.
+              {count, _} =
+                from(p in Product,
+                  where: p.id == ^product_id and p.stock_quantity >= ^quantity,
+                  update: [inc: [stock_quantity: ^negative_quantity]]
+                )
+                |> repo().update_all([])
+
+              if count == 1, do: :ok, else: {:error, :insufficient_stock}
           end
 
         variant_id ->
-          variant = Repo.get!(ProductVariant, variant_id)
+          {count, _} =
+            from(v in ProductVariant,
+              where: v.id == ^variant_id and v.product_id == ^product_id and v.stock_quantity >= ^quantity,
+              update: [inc: [stock_quantity: ^negative_quantity]]
+            )
+            |> repo().update_all([])
 
-          if variant.stock_quantity < quantity do
-            Repo.rollback(:insufficient_stock)
-          else
-            variant
-            |> Ecto.Changeset.change(stock_quantity: variant.stock_quantity - quantity)
-            |> Repo.update!()
-
+          if count == 1 do
             :ok
+          else
+            case repo().get_by(ProductVariant, id: variant_id, product_id: product_id) do
+              nil -> {:error, :not_found}
+              _variant -> {:error, :insufficient_stock}
+            end
           end
       end
-    end)
-    |> case do
-      {:ok, :ok} -> :ok
-      {:error, :insufficient_stock} -> {:error, :insufficient_stock}
-      {:error, reason} -> {:error, reason}
+    rescue
+      Ecto.Query.CastError -> {:error, :not_found}
     end
-  rescue
-    Ecto.NoResultsError -> {:error, :not_found}
   end
 
   @doc """
@@ -672,34 +688,41 @@ defmodule Mercato.Catalog do
       :ok
   """
   def release_stock(product_id, quantity, opts \\ []) when quantity > 0 do
-    Repo.transaction(fn ->
+    try do
       case opts[:variant_id] do
         nil ->
-          product = Repo.get!(Product, product_id)
+          case repo().get(Product, product_id) do
+            nil ->
+              {:error, :not_found}
 
-          if product.manage_stock do
-            product
-            |> Ecto.Changeset.change(stock_quantity: product.stock_quantity + quantity)
-            |> Repo.update!()
+            %Product{manage_stock: false} ->
+              :ok
+
+            %Product{manage_stock: true} ->
+              {count, _} =
+                from(p in Product,
+                  where: p.id == ^product_id,
+                  update: [inc: [stock_quantity: ^quantity]]
+                )
+                |> repo().update_all([])
+
+              if count == 1, do: :ok, else: {:error, :not_found}
           end
 
-          :ok
-
         variant_id ->
-          variant = Repo.get!(ProductVariant, variant_id)
+          {count, _} =
+            from(v in ProductVariant,
+              where: v.id == ^variant_id and v.product_id == ^product_id,
+              update: [inc: [stock_quantity: ^quantity]]
+            )
+            |> repo().update_all([])
 
-          variant
-          |> Ecto.Changeset.change(stock_quantity: variant.stock_quantity + quantity)
-          |> Repo.update!()
-
-          :ok
+          if count == 1, do: :ok, else: {:error, :not_found}
       end
-    end)
-    |> case do
-      {:ok, :ok} -> :ok
-      {:error, reason} -> {:error, reason}
+    rescue
+      Ecto.Query.CastError -> {:error, :not_found}
     end
-  rescue
-    Ecto.NoResultsError -> {:error, :not_found}
   end
+
+  defp repo, do: Mercato.repo()
 end

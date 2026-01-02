@@ -42,7 +42,7 @@ defmodule Mercato.Subscriptions do
   import Ecto.Query, warn: false
   require Logger
 
-  alias Mercato.Repo
+  alias Mercato
   alias Mercato.Subscriptions.{Subscription, SubscriptionCycle}
   alias Mercato.Orders
   alias Mercato.Events
@@ -62,8 +62,8 @@ defmodule Mercato.Subscriptions do
   """
   def get_subscription!(subscription_id) do
     Subscription
-    |> Repo.get!(subscription_id)
-    |> Repo.preload(:cycles)
+    |> repo().get!(subscription_id)
+    |> repo().preload(:cycles)
   end
 
   @doc """
@@ -78,12 +78,12 @@ defmodule Mercato.Subscriptions do
       {:error, :not_found}
   """
   def get_subscription(subscription_id) do
-    case Repo.get(Subscription, subscription_id) do
+    case repo().get(Subscription, subscription_id) do
       nil ->
         {:error, :not_found}
 
       subscription ->
-        subscription = Repo.preload(subscription, :cycles)
+        subscription = repo().preload(subscription, :cycles)
         {:ok, subscription}
     end
   end
@@ -157,8 +157,8 @@ defmodule Mercato.Subscriptions do
         query
       end
 
-    Repo.all(query)
-    |> Repo.preload(:cycles)
+    repo().all(query)
+    |> repo().preload(:cycles)
   end
 
   @doc """
@@ -199,7 +199,7 @@ defmodule Mercato.Subscriptions do
 
     %Subscription{}
     |> Subscription.create_changeset(attrs_with_next_billing)
-    |> Repo.insert()
+    |> repo().insert()
     |> case do
       {:ok, subscription} ->
         # Broadcast subscription created event
@@ -230,7 +230,7 @@ defmodule Mercato.Subscriptions do
       if subscription.status == "active" do
         subscription
         |> Subscription.pause_changeset()
-        |> Repo.update()
+        |> repo().update()
         |> case do
           {:ok, paused_subscription} ->
             Events.broadcast_subscription_paused(paused_subscription)
@@ -267,7 +267,7 @@ defmodule Mercato.Subscriptions do
 
         subscription
         |> Subscription.resume_changeset(%{next_billing_date: next_billing_date})
-        |> Repo.update()
+        |> repo().update()
         |> case do
           {:ok, resumed_subscription} ->
             Events.broadcast_subscription_resumed(resumed_subscription)
@@ -301,7 +301,7 @@ defmodule Mercato.Subscriptions do
       if subscription.status in ~w(active paused) do
         subscription
         |> Subscription.cancel_changeset()
-        |> Repo.update()
+        |> repo().update()
         |> case do
           {:ok, cancelled_subscription} ->
             Events.broadcast_subscription_cancelled(cancelled_subscription)
@@ -331,7 +331,7 @@ defmodule Mercato.Subscriptions do
       {:error, :not_found}
   """
   def process_renewal(subscription_id) do
-    Repo.transaction(fn ->
+    repo().transaction(fn ->
       with {:ok, subscription} <- get_subscription(subscription_id) do
         if subscription.status == "active" &&
            Date.compare(subscription.next_billing_date, Date.utc_today()) != :gt do
@@ -364,14 +364,14 @@ defmodule Mercato.Subscriptions do
             {:error, reason} ->
               # Mark cycle as failed
               {:ok, _failed_cycle} = fail_subscription_cycle(cycle)
-              Repo.rollback(reason)
+              repo().rollback(reason)
           end
         else
-          Repo.rollback(:subscription_not_due_for_renewal)
+          repo().rollback(:subscription_not_due_for_renewal)
         end
       else
         {:error, reason} ->
-          Repo.rollback(reason)
+          repo().rollback(reason)
       end
     end)
   end
@@ -395,8 +395,8 @@ defmodule Mercato.Subscriptions do
       where: s.status == "active" and s.next_billing_date <= ^date,
       order_by: [asc: s.next_billing_date]
     )
-    |> Repo.all()
-    |> Repo.preload(:cycles)
+    |> repo().all()
+    |> repo().preload(:cycles)
   end
 
   # Private Functions
@@ -434,7 +434,7 @@ defmodule Mercato.Subscriptions do
   end
 
   defp get_next_cycle_number(subscription) do
-    case Repo.one(
+    case repo().one(
       from c in SubscriptionCycle,
         where: c.subscription_id == ^subscription.id,
         select: max(c.cycle_number)
@@ -453,7 +453,7 @@ defmodule Mercato.Subscriptions do
       amount: subscription.billing_amount,
       status: "pending"
     })
-    |> Repo.insert()
+    |> repo().insert()
   end
 
   defp create_renewal_order(subscription, cycle) do
@@ -480,18 +480,20 @@ defmodule Mercato.Subscriptions do
   defp complete_subscription_cycle(cycle, order_id) do
     cycle
     |> SubscriptionCycle.complete_changeset(%{order_id: order_id})
-    |> Repo.update()
+    |> repo().update()
   end
 
   defp fail_subscription_cycle(cycle) do
     cycle
     |> SubscriptionCycle.fail_changeset()
-    |> Repo.update()
+    |> repo().update()
   end
 
   defp update_subscription_billing_date(subscription, next_billing_date) do
     subscription
     |> Subscription.billing_changeset(%{next_billing_date: next_billing_date})
-    |> Repo.update()
+    |> repo().update()
   end
+
+  defp repo, do: Mercato.repo()
 end

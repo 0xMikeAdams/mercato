@@ -33,7 +33,7 @@ defmodule Mercato.Config do
   """
 
   import Ecto.Query, warn: false
-  alias Mercato.Repo
+  alias Mercato
   alias Mercato.Config.StoreSetting
 
   @doc """
@@ -96,10 +96,12 @@ defmodule Mercato.Config do
     value_type = determine_value_type(value)
 
     # Wrap non-map values in a map for storage
-    stored_value = case value_type do
-      "map" -> value
-      _ -> %{"value" => value}
-    end
+    stored_value =
+      case value_type do
+        "map" -> value
+        "decimal" -> %{"value" => Decimal.to_string(value)}
+        _ -> %{"value" => value}
+      end
 
     attrs = %{
       key: key_string,
@@ -110,10 +112,11 @@ defmodule Mercato.Config do
     case get_runtime_setting(key_string) do
       {:ok, _existing_value} ->
         # Update existing setting
-        setting = Repo.get_by!(StoreSetting, key: key_string)
+        repo = Mercato.repo()
+        setting = repo.get_by!(StoreSetting, key: key_string)
         setting
         |> StoreSetting.changeset(attrs)
-        |> Repo.update()
+        |> repo.update()
         |> case do
           {:ok, _setting} -> :ok
           {:error, _changeset} -> {:error, :update_failed}
@@ -121,9 +124,10 @@ defmodule Mercato.Config do
 
       {:error, :not_found} ->
         # Create new setting
+        repo = Mercato.repo()
         %StoreSetting{}
         |> StoreSetting.changeset(attrs)
-        |> Repo.insert()
+        |> repo.insert()
         |> case do
           {:ok, _setting} -> :ok
           {:error, _changeset} -> {:error, :insert_failed}
@@ -177,10 +181,12 @@ defmodule Mercato.Config do
   def delete_setting(key) when is_atom(key) do
     key_string = Atom.to_string(key)
 
-    case Repo.get_by(StoreSetting, key: key_string) do
+    repo = Mercato.repo()
+
+    case repo.get_by(StoreSetting, key: key_string) do
       nil -> {:error, :not_found}
       setting ->
-        case Repo.delete(setting) do
+        case repo.delete(setting) do
           {:ok, _setting} -> :ok
           {:error, _changeset} -> {:error, :delete_failed}
         end
@@ -198,20 +204,35 @@ defmodule Mercato.Config do
       [%StoreSetting{key: "store_name", value: "My Store"}, ...]
   """
   def list_runtime_settings do
-    Repo.all(StoreSetting)
+    Mercato.repo().all(StoreSetting)
   end
 
   # Private Functions
 
   defp get_runtime_setting(key_string) do
-    case Repo.get_by(StoreSetting, key: key_string) do
+    repo = Mercato.repo()
+
+    case repo.get_by(StoreSetting, key: key_string) do
       nil -> {:error, :not_found}
       %StoreSetting{value: stored_value, value_type: value_type} ->
         # Unwrap non-map values
-        actual_value = case value_type do
-          "map" -> stored_value
-          _ -> Map.get(stored_value, "value")
-        end
+        actual_value =
+          case value_type do
+            "map" ->
+              stored_value
+
+            "decimal" ->
+              stored_value
+              |> Map.get("value")
+              |> case do
+                v when is_binary(v) -> Decimal.new(v)
+                _ -> Decimal.new("0")
+              end
+
+            _ ->
+              Map.get(stored_value, "value")
+          end
+
         {:ok, actual_value}
     end
   end
@@ -235,13 +256,26 @@ defmodule Mercato.Config do
 
   defp get_all_runtime_settings do
     StoreSetting
-    |> Repo.all()
+    |> Mercato.repo().all()
     |> Enum.map(fn %StoreSetting{key: key, value: stored_value, value_type: value_type} ->
       # Unwrap non-map values
-      actual_value = case value_type do
-        "map" -> stored_value
-        _ -> Map.get(stored_value, "value")
-      end
+      actual_value =
+        case value_type do
+          "map" ->
+            stored_value
+
+          "decimal" ->
+            stored_value
+            |> Map.get("value")
+            |> case do
+              v when is_binary(v) -> Decimal.new(v)
+              _ -> Decimal.new("0")
+            end
+
+          _ ->
+            Map.get(stored_value, "value")
+        end
+
       {String.to_atom(key), actual_value}
     end)
     |> Enum.into(%{})
@@ -250,6 +284,7 @@ defmodule Mercato.Config do
   defp determine_value_type(value) when is_binary(value), do: "string"
   defp determine_value_type(value) when is_integer(value), do: "integer"
   defp determine_value_type(value) when is_boolean(value), do: "boolean"
+  defp determine_value_type(%Decimal{}), do: "decimal"
   defp determine_value_type(value) when is_map(value), do: "map"
   defp determine_value_type(_value), do: "string"  # fallback
 

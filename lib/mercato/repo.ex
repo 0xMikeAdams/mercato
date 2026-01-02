@@ -2,12 +2,19 @@ defmodule Mercato.Repo do
   @moduledoc """
   The Ecto repository for Mercato.
 
-  This module provides database access for all Mercato schemas. It can be configured
-  to use PostgreSQL, MySQL, or any other Ecto-supported database adapter.
+  Mercato can run on either:
+
+  - your application's repo (recommended), configured via `config :mercato, :repo, MyApp.Repo`
+  - `Mercato.Repo` (defaults to this)
 
   ## Configuration
 
-  Configure the repository in your application's config files:
+  If you want Mercato to use your application's repo:
+
+      # config/config.exs
+      config :mercato, :repo, MyApp.Repo
+
+  If you want to use `Mercato.Repo`, configure it like any other `Ecto.Repo`:
 
       # config/config.exs
       config :mercato, Mercato.Repo,
@@ -16,13 +23,10 @@ defmodule Mercato.Repo do
         password: "postgres",
         hostname: "localhost"
 
-      config :mercato,
-        ecto_repos: [Mercato.Repo]
-
   ## Usage
 
-  The repository is automatically started as part of the Mercato application
-  supervision tree. You can use it directly for custom queries:
+  Mercato will start `Mercato.Repo` only when `config :mercato, :repo` is set to `Mercato.Repo`.
+  Otherwise, your application is responsible for starting its own repo.
 
       import Ecto.Query
 
