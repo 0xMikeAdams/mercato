@@ -366,5 +366,5 @@ Full documentation is available at [https://hexdocs.pm/mercato](https://hexdocs.
 ## Support
 
 - 📖 [Documentation](https://hexdocs.pm/mercato)
-- 🐛 [Issue Tracker](https://github.com/yourusername/mercato/issues)
-- 💬 [Discussions](https://github.com/yourusername/mercato/discussions)
+- 🐛 [Issue Tracker](https://github.com/0xMikeAdams/mercato/issues)
+- 💬 [Discussions](https://github.com/0xMikeAdams/mercato/discussions)
