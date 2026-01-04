@@ -278,9 +278,11 @@ defmodule Mix.Tasks.Mercato.Install do
   defp upsert_api_routes!(router_contents, force?) do
     api_block = """
     # BEGIN MERCATO_API
-    mercato_basic_routes(prefix: "/mercato", controllers: Mercato.Controllers)
-    get "/mercato/referrals/validate/:code", Mercato.ReferralController, :validate
-    get "/mercato/referrals/stats/:code", Mercato.ReferralController, :stats
+    scope "/mercato", alias: Mercato, as: false do
+      mercato_basic_routes(controllers: Mercato.Controllers)
+      get "/referrals/validate/:code", ReferralController, :validate
+      get "/referrals/stats/:code", ReferralController, :stats
+    end
     # END MERCATO_API
     """
 
@@ -292,11 +294,11 @@ defmodule Mix.Tasks.Mercato.Install do
         # Fallback: append a self-contained API scope block near the bottom of the router module.
         fallback = """
         # BEGIN MERCATO_API
-        scope "/api/mercato" do
+        scope "/api/mercato", alias: Mercato, as: false do
           pipe_through :api
           mercato_basic_routes(controllers: Mercato.Controllers)
-          get "/referrals/validate/:code", Mercato.ReferralController, :validate
-          get "/referrals/stats/:code", Mercato.ReferralController, :stats
+          get "/referrals/validate/:code", ReferralController, :validate
+          get "/referrals/stats/:code", ReferralController, :stats
         end
         # END MERCATO_API
         """
@@ -308,7 +310,9 @@ defmodule Mix.Tasks.Mercato.Install do
   defp upsert_referral_routes!(router_contents, force?) do
     block = """
     # BEGIN MERCATO_REFERRAL
-    get "/r/:code", Mercato.ReferralController, :redirect
+    scope "/", alias: Mercato, as: false do
+      get "/r/:code", ReferralController, :redirect
+    end
     # END MERCATO_REFERRAL
     """
 
@@ -478,7 +482,7 @@ defmodule Mix.Tasks.Mercato.Install do
       if String.trim(line) == "" do
         ""
       else
-        indent <> String.trim_leading(line)
+        indent <> String.trim_trailing(line)
       end
     end)
   end
