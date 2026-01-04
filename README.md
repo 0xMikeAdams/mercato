@@ -3,7 +3,7 @@
 <!-- [![Hex.pm](https://img.shields.io/hexpm/v/mercato.svg)](https://hex.pm/packages/mercato)
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/mercato) -->
 
-A production-ready, open-source e-commerce engine for Elixir/Phoenix applications. Mercato provides comprehensive WooCommerce-level functionality built idiomatically with Elixir, Ecto, and Phoenix, featuring real-time capabilities and extensible architecture.
+A production-ready, open-source e-commerce engine for Elixir/Phoenix applications. Mercato provides comprehensive functionality built idiomatically with Elixir, Ecto, and Phoenix, featuring real-time capabilities and extensible architecture.
 
 ## Features
 
@@ -17,7 +17,7 @@ A production-ready, open-source e-commerce engine for Elixir/Phoenix application
 - ⚡ **Real-time Events**: PubSub-based notifications for all state changes
 - 🔧 **Extensible Behaviours**: Custom payment, shipping, and tax implementations
 
-## Installation
+## Installation & Setup
 
 Add `mercato` to your list of dependencies in `mix.exs`:
 
@@ -29,7 +29,7 @@ def deps do
 end
 ```
 
-Then run:
+Get dependencies and run installer:
 
 ```bash
 mix deps.get
@@ -41,17 +41,14 @@ The installation command will:
 - Create/update `config/mercato.exs` and import it from `config/config.exs`
 - Inject a minimal API and referral routes into your Phoenix router
 
-## Quick Setup
 
-### 1. Run Migrations
-
-After `mix mercato.install`, run:
+Run Migrations
 
 ```bash
 mix ecto.migrate
 ```
 
-### 2. Review Config
+Verify Configuration
 
 The installer creates `config/mercato.exs` and sets:
 
@@ -107,29 +104,6 @@ config :mercato,
   },
   payment_method: "stripe"
 })
-```
-
-### Phoenix Router Integration
-
-Add Mercato routes to your router:
-
-```elixir
-defmodule YourAppWeb.Router do
-  use YourAppWeb, :router
-  import Mercato.Router
-
-  # API routes for e-commerce functionality
-  scope "/api", YourAppWeb do
-    pipe_through :api
-    mercato_api_routes()
-  end
-
-  # Referral shortlinks
-  scope "/", YourAppWeb do
-    pipe_through :browser
-    get "/r/:code", Mercato.ReferralController, :redirect
-  end
-end
 ```
 
 ### LiveView Integration
@@ -365,6 +339,6 @@ Full documentation is available at [https://hexdocs.pm/mercato](https://hexdocs.
 
 ## Support
 
-- 📖 [Documentation](https://hexdocs.pm/mercato)
+<!-- - 📖 [Documentation](https://hexdocs.pm/mercato) -->
 - 🐛 [Issue Tracker](https://github.com/0xMikeAdams/mercato/issues)
 - 💬 [Discussions](https://github.com/0xMikeAdams/mercato/discussions)
