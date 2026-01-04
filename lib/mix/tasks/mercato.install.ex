@@ -279,7 +279,7 @@ defmodule Mix.Tasks.Mercato.Install do
     api_block = """
     # BEGIN MERCATO_API
     scope "/mercato", alias: Mercato, as: false do
-      mercato_basic_routes(controllers: Mercato.Controllers)
+      mercato_basic_routes(controllers: Controllers)
       get "/referrals/validate/:code", ReferralController, :validate
       get "/referrals/stats/:code", ReferralController, :stats
     end
@@ -296,7 +296,7 @@ defmodule Mix.Tasks.Mercato.Install do
         # BEGIN MERCATO_API
         scope "/api/mercato", alias: Mercato, as: false do
           pipe_through :api
-          mercato_basic_routes(controllers: Mercato.Controllers)
+          mercato_basic_routes(controllers: Controllers)
           get "/referrals/validate/:code", ReferralController, :validate
           get "/referrals/stats/:code", ReferralController, :stats
         end
