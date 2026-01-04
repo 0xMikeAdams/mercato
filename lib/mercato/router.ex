@@ -296,6 +296,10 @@ defmodule Mercato.Router do
     {:__aliases__, [], [name]}
   end
 
+  defp controller_ast({:__aliases__, meta, segments}, name) when is_list(segments) and is_atom(name) do
+    {:__aliases__, meta, segments ++ [name]}
+  end
+
   defp controller_ast(base, name) when is_atom(name) do
     Module.concat(base, name)
   end
