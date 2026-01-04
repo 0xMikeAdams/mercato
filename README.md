@@ -42,13 +42,13 @@ The installation command will:
 - Inject a minimal API and referral routes into your Phoenix router
 
 
-Run Migrations
+Run Migrations:
 
 ```bash
 mix ecto.migrate
 ```
 
-Verify Configuration
+Verify Configuration:
 
 The installer creates `config/mercato.exs` and sets:
 
