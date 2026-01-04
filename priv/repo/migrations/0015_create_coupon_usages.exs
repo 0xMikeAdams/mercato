@@ -14,7 +14,6 @@ defmodule Mercato.Repo.Migrations.CreateCouponUsages do
 
     create index(:coupon_usages, [:coupon_id])
     create index(:coupon_usages, [:user_id])
-    create index(:coupon_usages, [:order_id])
     create index(:coupon_usages, [:used_at])
     create index(:coupon_usages, [:coupon_id, :user_id])
     create unique_index(:coupon_usages, [:order_id])  # One coupon per order
