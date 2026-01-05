@@ -48,7 +48,7 @@ defmodule Mercato.MixProject do
       {:ecto, "~> 3.11"},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.17"},
-      {:phoenix, "~> 1.7", optional: true},
+      {:phoenix, "~> 1.7"},
       {:phoenix_pubsub, "~> 2.1"},
       {:decimal, "~> 2.0"},
       {:jason, "~> 1.4"},
