@@ -48,6 +48,7 @@ defmodule Mercato.MixProject do
       {:ecto, "~> 3.11"},
       {:ecto_sql, "~> 3.11"},
       {:postgrex, "~> 0.17"},
+      {:phoenix, "~> 1.7", optional: true},
       {:phoenix_pubsub, "~> 2.1"},
       {:decimal, "~> 2.0"},
       {:jason, "~> 1.4"},
@@ -62,9 +63,8 @@ defmodule Mercato.MixProject do
   defp description do
     """
     A production-ready, open-source e-commerce engine for Elixir/Phoenix applications.
-    Provides WooCommerce-level functionality with real-time capabilities, extensible
-    architecture, and comprehensive e-commerce features including product catalogs,
-    shopping carts, order management, subscriptions, and referral systems.
+    Provides real-time capabilities, extensible architecture, and comprehensive e-commerce
+    features including product catalogs, shopping carts, order management, subscriptions, and referral systems.
     """
   end
 
