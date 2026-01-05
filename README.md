@@ -37,7 +37,7 @@ mix mercato.install
 ```
 
 The installation command will:
-- Copy all necessary migrations to your application
+- Copy necessary migrations to your application
 - Create/update `config/mercato.exs` and import it from `config/config.exs`
 - Inject a minimal API and referral routes into your Phoenix router
 
