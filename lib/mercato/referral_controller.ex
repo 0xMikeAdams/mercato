@@ -19,6 +19,7 @@ defmodule Mercato.ReferralController do
   """
 
   use Phoenix.Controller, namespace: false
+  import Phoenix.Controller, except: [redirect: 2]
 
   alias Mercato.Events
   alias Mercato.Referrals
@@ -45,11 +46,11 @@ defmodule Mercato.ReferralController do
 
         conn
         |> set_referral_cookie(code)
-        |> redirect(external: redirect_url)
+        |> Phoenix.Controller.redirect(external: redirect_url)
 
       {:error, :not_found} ->
         Logger.warn("Invalid referral code accessed", referral_code: code)
-        redirect(conn, external: redirect_url)
+        Phoenix.Controller.redirect(conn, external: redirect_url)
 
       {:error, reason} ->
         Logger.error("Error processing referral code",
@@ -57,7 +58,7 @@ defmodule Mercato.ReferralController do
           reason: inspect(reason)
         )
 
-        redirect(conn, external: redirect_url)
+        Phoenix.Controller.redirect(conn, external: redirect_url)
     end
   end
 
