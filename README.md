@@ -7,15 +7,15 @@ A production-ready, open-source e-commerce engine for Elixir/Phoenix application
 
 ## Features
 
-- 🛍️ **Product Catalog**: Simple, variable, downloadable, virtual, and subscription products
-- 🛒 **Shopping Cart**: Anonymous and authenticated carts with real-time updates
-- 📦 **Order Management**: Complete order lifecycle with status tracking and audit trails
-- 👥 **Customer Management**: Guest checkout and registered user support
-- 🎫 **Promotions**: Flexible coupon system with multiple discount types
-- 🔄 **Subscriptions**: Recurring billing with multiple cycle options
-- 🔗 **Referral System**: Commission tracking with shortlink attribution
-- ⚡ **Real-time Events**: PubSub-based notifications for all state changes
-- 🔧 **Extensible Behaviours**: Custom payment, shipping, and tax implementations
+- **Product Catalog**: Simple, variable, downloadable, virtual, and subscription products
+- **Shopping Cart**: Anonymous and authenticated carts with real-time updates
+- **Order Management**: Complete order lifecycle with status tracking and audit trails
+- **Customer Management**: Guest checkout and registered user support
+- **Promotions**: Flexible coupon system with multiple discount types
+- **Subscriptions**: Recurring billing with multiple cycle options
+- **Referral System**: Commission tracking with shortlink attribution
+- **Real-time Events**: PubSub-based notifications for all state changes
+- **Extensible Behaviours**: Custom payment, shipping, and tax implementations
 
 ## Installation & Setup
 
@@ -339,6 +339,6 @@ Full documentation is available at [https://hexdocs.pm/mercato](https://hexdocs.
 
 ## Support
 
-<!-- - 📖 [Documentation](https://hexdocs.pm/mercato) -->
-- 🐛 [Issue Tracker](https://github.com/0xMikeAdams/mercato/issues)
-- 💬 [Discussions](https://github.com/0xMikeAdams/mercato/discussions)
+<!-- - [Documentation](https://hexdocs.pm/mercato) -->
+- [Issue Tracker](https://github.com/0xMikeAdams/mercato/issues)
+- [Discussions](https://github.com/0xMikeAdams/mercato/discussions)
