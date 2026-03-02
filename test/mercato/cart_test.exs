@@ -24,7 +24,8 @@ defmodule Mercato.CartTest do
 
   describe "create_cart/1" do
     test "creates a cart with a cart token" do
-      {:ok, cart} = Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
 
       assert cart.id
       assert cart.status == "active"
@@ -44,7 +45,9 @@ defmodule Mercato.CartTest do
 
   describe "get_cart/1" do
     test "retrieves an existing cart" do
-      {:ok, created_cart} = Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+      {:ok, created_cart} =
+        Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+
       {:ok, retrieved_cart} = Cart.get_cart(created_cart.id)
 
       assert retrieved_cart.id == created_cart.id
@@ -57,7 +60,9 @@ defmodule Mercato.CartTest do
 
   describe "add_item/4" do
     test "adds an item to the cart", %{product: product} do
-      {:ok, cart} = Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+
       {:ok, updated_cart} = Cart.add_item(cart.id, product.id, 2)
 
       assert length(updated_cart.items) == 1
@@ -69,7 +74,9 @@ defmodule Mercato.CartTest do
     end
 
     test "increases quantity when adding same product again", %{product: product} do
-      {:ok, cart} = Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+
       {:ok, cart} = Cart.add_item(cart.id, product.id, 2)
       {:ok, updated_cart} = Cart.add_item(cart.id, product.id, 3)
 
@@ -79,17 +86,56 @@ defmodule Mercato.CartTest do
     end
 
     test "calculates subtotal correctly", %{product: product} do
-      {:ok, cart} = Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+
       {:ok, updated_cart} = Cart.add_item(cart.id, product.id, 2)
 
       expected_subtotal = Decimal.mult(product.price, 2)
       assert Decimal.equal?(updated_cart.subtotal, expected_subtotal)
     end
+
+    test "returns an error for non-positive quantity", %{product: product} do
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+
+      assert {:error, :invalid_quantity} = Cart.add_item(cart.id, product.id, 0)
+      assert {:error, :invalid_quantity} = Cart.add_item(cart.id, product.id, -1)
+    end
+
+    test "returns an error when variant does not belong to product", %{product: product} do
+      {:ok, other_product} =
+        Catalog.create_product(%{
+          name: "Variable Product",
+          slug: "variable-product-#{System.unique_integer([:positive])}",
+          price: Decimal.new("39.99"),
+          sku: "VAR-#{System.unique_integer([:positive])}",
+          product_type: "variable",
+          status: "published",
+          stock_quantity: 100
+        })
+
+      {:ok, variant} =
+        Catalog.create_variant(other_product.id, %{
+          sku: "VARIANT-#{System.unique_integer([:positive])}",
+          price: Decimal.new("41.99"),
+          stock_quantity: 10,
+          attributes: %{"size" => "L"}
+        })
+
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+
+      assert {:error, :variant_product_mismatch} =
+               Cart.add_item(cart.id, product.id, 1, variant_id: variant.id)
+    end
   end
 
   describe "update_item_quantity/3" do
     test "updates the quantity of a cart item", %{product: product} do
-      {:ok, cart} = Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+
       {:ok, cart} = Cart.add_item(cart.id, product.id, 2)
       item = List.first(cart.items)
 
@@ -99,11 +145,24 @@ defmodule Mercato.CartTest do
       assert updated_item.quantity == 5
       assert Decimal.equal?(updated_item.total_price, Decimal.mult(product.price, 5))
     end
+
+    test "returns an error for non-positive quantity", %{product: product} do
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+
+      {:ok, cart} = Cart.add_item(cart.id, product.id, 2)
+      item = List.first(cart.items)
+
+      assert {:error, :invalid_quantity} = Cart.update_item_quantity(cart.id, item.id, 0)
+      assert {:error, :invalid_quantity} = Cart.update_item_quantity(cart.id, item.id, -3)
+    end
   end
 
   describe "remove_item/2" do
     test "removes an item from the cart", %{product: product} do
-      {:ok, cart} = Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+
       {:ok, cart} = Cart.add_item(cart.id, product.id, 2)
       item = List.first(cart.items)
 
@@ -116,7 +175,9 @@ defmodule Mercato.CartTest do
 
   describe "clear_cart/1" do
     test "removes all items from the cart", %{product: product} do
-      {:ok, cart} = Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+
       {:ok, cart} = Cart.add_item(cart.id, product.id, 2)
 
       {:ok, cleared_cart} = Cart.clear_cart(cart.id)
@@ -129,7 +190,9 @@ defmodule Mercato.CartTest do
 
   describe "recalculate_totals/2" do
     test "recalculates cart totals", %{product: product} do
-      {:ok, cart} = Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+
       {:ok, cart} = Cart.add_item(cart.id, product.id, 3)
 
       {:ok, recalculated_cart} = Cart.recalculate_totals(cart.id)

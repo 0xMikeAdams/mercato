@@ -55,7 +55,7 @@ defmodule Mercato.Catalog do
       [%Product{categories: [...]}, ...]
   """
   def list_products(opts \\ []) do
-    query = from p in Product
+    query = from(p in Product)
 
     query
     |> filter_by_status(opts[:status])
@@ -91,11 +91,29 @@ defmodule Mercato.Catalog do
       ** (Ecto.NoResultsError)
   """
   def get_product!(id, opts \\ []) do
-    query = from p in Product, where: p.id == ^id
+    query = from(p in Product, where: p.id == ^id)
 
     query
     |> maybe_preload(opts[:preload])
     |> repo().one!()
+  end
+
+  @doc """
+  Gets a single product by ID.
+
+  Returns `{:ok, product}` if found, `{:error, :not_found}` otherwise.
+
+  ## Options
+
+  - `:preload` - List of associations to preload
+  """
+  def get_product(id, opts \\ []) do
+    query = from(p in Product, where: p.id == ^id)
+
+    case query |> maybe_preload(opts[:preload]) |> repo().one() do
+      nil -> {:error, :not_found}
+      product -> {:ok, product}
+    end
   end
 
   @doc """
@@ -112,7 +130,7 @@ defmodule Mercato.Catalog do
       {:error, :not_found}
   """
   def get_product_by_slug(slug, opts \\ []) do
-    query = from p in Product, where: p.slug == ^slug
+    query = from(p in Product, where: p.slug == ^slug)
 
     case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
@@ -298,7 +316,7 @@ defmodule Mercato.Catalog do
       {:ok, %Category{}}
   """
   def get_category(id, opts \\ []) do
-    query = from c in Category, where: c.id == ^id
+    query = from(c in Category, where: c.id == ^id)
 
     case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
@@ -377,7 +395,7 @@ defmodule Mercato.Catalog do
       {:ok, %Tag{}}
   """
   def get_tag(id, opts \\ []) do
-    query = from t in Tag, where: t.id == ^id
+    query = from(t in Tag, where: t.id == ^id)
 
     case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
@@ -439,7 +457,7 @@ defmodule Mercato.Catalog do
   """
   def set_product_categories(%Product{} = product, category_ids) do
     product = repo().preload(product, :categories)
-    categories = repo().all(from c in Category, where: c.id in ^category_ids)
+    categories = repo().all(from(c in Category, where: c.id in ^category_ids))
 
     product
     |> Ecto.Changeset.change()
@@ -459,7 +477,7 @@ defmodule Mercato.Catalog do
   """
   def set_product_tags(%Product{} = product, tag_ids) do
     product = repo().preload(product, :tags)
-    tags = repo().all(from t in Tag, where: t.id in ^tag_ids)
+    tags = repo().all(from(t in Tag, where: t.id in ^tag_ids))
 
     product
     |> Ecto.Changeset.change()
@@ -611,9 +629,10 @@ defmodule Mercato.Catalog do
       :ok
   """
   def reserve_stock(product_id, quantity, opts \\ []) when quantity > 0 do
-    negative_quantity = -quantity
+    with :ok <- validate_binary_id(product_id),
+         :ok <- validate_optional_binary_id(opts[:variant_id]) do
+      negative_quantity = -quantity
 
-    try do
       case opts[:variant_id] do
         nil ->
           case repo().get(Product, product_id) do
@@ -634,7 +653,6 @@ defmodule Mercato.Catalog do
               if count == 1, do: :ok, else: {:error, :insufficient_stock}
 
             %Product{} ->
-              # Defensive: treat unexpected values as stock-managed.
               {count, _} =
                 from(p in Product,
                   where: p.id == ^product_id and p.stock_quantity >= ^quantity,
@@ -648,7 +666,9 @@ defmodule Mercato.Catalog do
         variant_id ->
           {count, _} =
             from(v in ProductVariant,
-              where: v.id == ^variant_id and v.product_id == ^product_id and v.stock_quantity >= ^quantity,
+              where:
+                v.id == ^variant_id and v.product_id == ^product_id and
+                  v.stock_quantity >= ^quantity,
               update: [inc: [stock_quantity: ^negative_quantity]]
             )
             |> repo().update_all([])
@@ -662,8 +682,8 @@ defmodule Mercato.Catalog do
             end
           end
       end
-    rescue
-      Ecto.Query.CastError -> {:error, :not_found}
+    else
+      {:error, :invalid_id} -> {:error, :not_found}
     end
   end
 
@@ -688,7 +708,8 @@ defmodule Mercato.Catalog do
       :ok
   """
   def release_stock(product_id, quantity, opts \\ []) when quantity > 0 do
-    try do
+    with :ok <- validate_binary_id(product_id),
+         :ok <- validate_optional_binary_id(opts[:variant_id]) do
       case opts[:variant_id] do
         nil ->
           case repo().get(Product, product_id) do
@@ -719,10 +740,20 @@ defmodule Mercato.Catalog do
 
           if count == 1, do: :ok, else: {:error, :not_found}
       end
-    rescue
-      Ecto.Query.CastError -> {:error, :not_found}
+    else
+      {:error, :invalid_id} -> {:error, :not_found}
     end
   end
+
+  defp validate_binary_id(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, _uuid} -> :ok
+      :error -> {:error, :invalid_id}
+    end
+  end
+
+  defp validate_optional_binary_id(nil), do: :ok
+  defp validate_optional_binary_id(id), do: validate_binary_id(id)
 
   defp repo, do: Mercato.repo()
 end

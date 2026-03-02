@@ -103,10 +103,11 @@ defmodule Mercato.Cart do
   """
   def get_cart_by_user(user_id) do
     query =
-      from c in Cart,
+      from(c in Cart,
         where: c.user_id == ^user_id and c.status == "active",
         order_by: [desc: c.updated_at],
         limit: 1
+      )
 
     case repo().one(query) do
       nil ->
@@ -145,7 +146,9 @@ defmodule Mercato.Cart do
               Logger.debug("Started cart manager for cart #{cart.id}")
 
             {:error, reason} ->
-              Logger.warning("Failed to start cart manager for cart #{cart.id}: #{inspect(reason)}")
+              Logger.warning(
+                "Failed to start cart manager for cart #{cart.id}: #{inspect(reason)}"
+              )
           end
         end
 
@@ -177,7 +180,9 @@ defmodule Mercato.Cart do
       iex> add_item("non-existent", product_id, 2)
       {:error, :not_found}
   """
-  def add_item(cart_id, product_id, quantity, opts \\ []) when quantity > 0 do
+  def add_item(cart_id, product_id, quantity, opts \\ [])
+
+  def add_item(cart_id, product_id, quantity, opts) when quantity > 0 do
     variant_id = Keyword.get(opts, :variant_id)
 
     with {:ok, cart} <- get_cart(cart_id),
@@ -219,6 +224,11 @@ defmodule Mercato.Cart do
     end
   end
 
+  def add_item(_cart_id, _product_id, quantity, _opts)
+      when not is_integer(quantity) or quantity <= 0 do
+    {:error, :invalid_quantity}
+  end
+
   @doc """
   Updates the quantity of a cart item.
 
@@ -247,6 +257,11 @@ defmodule Mercato.Cart do
     end
   end
 
+  def update_item_quantity(_cart_id, _item_id, quantity)
+      when not is_integer(quantity) or quantity <= 0 do
+    {:error, :invalid_quantity}
+  end
+
   @doc """
   Removes an item from a cart.
 
@@ -260,7 +275,7 @@ defmodule Mercato.Cart do
   """
   def remove_item(cart_id, item_id) do
     with {:ok, cart} <- get_cart(cart_id),
-      {:ok, item} <- get_cart_item(cart, item_id) do
+         {:ok, item} <- get_cart_item(cart, item_id) do
       repo().delete(item)
 
       cart = recalculate_and_broadcast(cart_id)
@@ -568,11 +583,9 @@ defmodule Mercato.Cart do
   # Private Functions
 
   defp fetch_product(product_id) do
-    try do
-      product = Catalog.get_product!(product_id)
-      {:ok, product}
-    rescue
-      Ecto.NoResultsError -> {:error, :product_not_found}
+    case Catalog.get_product(product_id) do
+      {:ok, product} -> {:ok, product}
+      {:error, :not_found} -> {:error, :product_not_found}
     end
   end
 
@@ -595,14 +608,20 @@ defmodule Mercato.Cart do
   end
 
   defp get_item_price(product, variant_id) do
-    # Get variant price
+    product_id = product.id
+
     case Catalog.get_variant(variant_id) do
-      {:ok, variant} ->
+      {:ok, %{product_id: ^product_id} = variant} ->
         {:ok, variant.price}
 
-      {:error, _} ->
-        # Fall back to product price if variant not found
-        {:ok, product.price}
+      {:ok, _variant} ->
+        {:error, :variant_product_mismatch}
+
+      {:error, :not_found} ->
+        {:error, :variant_not_found}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

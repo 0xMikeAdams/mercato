@@ -39,10 +39,12 @@ defmodule Mercato.Orders do
   import Ecto.Query, warn: false
   require Logger
 
+  alias Ecto.Multi
   alias Mercato
   alias Mercato.Orders.{Order, OrderItem, OrderStatusHistory}
   alias Mercato.Cart
   alias Mercato.Catalog
+  alias Mercato.Coupons
   alias Mercato.Events
   alias Mercato.Referrals
 
@@ -119,21 +121,22 @@ defmodule Mercato.Orders do
     order_direction = Keyword.get(opts, :order_direction, :desc)
 
     query =
-      from o in Order,
+      from(o in Order,
         order_by: [{^order_direction, field(o, ^order_by)}],
         limit: ^limit,
         offset: ^offset
+      )
 
     query =
       if user_id do
-        from o in query, where: o.user_id == ^user_id
+        from(o in query, where: o.user_id == ^user_id)
       else
         query
       end
 
     query =
       if status do
-        from o in query, where: o.status == ^status
+        from(o in query, where: o.status == ^status)
       else
         query
       end
@@ -159,6 +162,7 @@ defmodule Mercato.Orders do
 
   - `:shipping_address` - Customer shipping address (defaults to billing_address)
   - `:customer_notes` - Optional notes from customer
+  - `:idempotency_key` - Unique key used to safely deduplicate client retries
   - `:payment_details` - Payment information for gateway processing
   - `:payment_transaction_id` - External payment processor transaction ID (if payment processed externally)
   - `:process_payment` - Whether to process payment through gateway (default: true)
@@ -182,30 +186,75 @@ defmodule Mercato.Orders do
       {:error, :cart_not_found}
   """
   def create_order_from_cart(cart_id, attrs) do
+    attrs = normalize_attrs(attrs)
+    idempotency_key = get_idempotency_key(attrs)
+
+    case get_order_by_idempotency_key(idempotency_key, cart_id) do
+      {:ok, order} ->
+        {:ok, order}
+
+      :not_found ->
+        do_create_order_from_cart(cart_id, attrs, idempotency_key)
+    end
+  end
+
+  defp do_create_order_from_cart(cart_id, attrs, idempotency_key) do
     result =
-      repo().transaction(fn ->
-        with {:ok, cart} <- Cart.get_cart(cart_id),
-             :ok <- validate_cart_not_empty(cart),
-             {:ok, order_number} <- generate_order_number(),
-             :ok <- reserve_inventory_for_cart(cart),
-             {:ok, payment_result} <- process_payment_if_requested(cart, attrs),
-             {:ok, order} <- create_order_from_cart_data(cart, order_number, attrs, payment_result),
-             {:ok, _order_items} <- create_order_items_from_cart(order, cart),
-             {:ok, _status_history} <- create_initial_status_history(order),
-             {:ok, _updated_cart} <- mark_cart_as_converted(cart) do
-          repo().preload(order, [:items, :status_history])
-        else
-          {:error, reason} ->
-            repo().rollback(reason)
+      Multi.new()
+      |> Multi.run(:cart, fn _repo, _changes -> Cart.get_cart(cart_id) end)
+      |> Multi.run(:validate_cart, fn _repo, %{cart: cart} ->
+        case validate_cart_not_empty(cart) do
+          :ok -> {:ok, :ok}
+          {:error, reason} -> {:error, reason}
         end
       end)
+      |> Multi.run(:order_number, fn _repo, _changes -> generate_order_number() end)
+      |> Multi.run(:reserve_inventory, fn _repo, %{cart: cart} ->
+        case reserve_inventory_for_cart(cart) do
+          :ok -> {:ok, :ok}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
+      |> Multi.run(:order, fn _repo, %{cart: cart, order_number: order_number} ->
+        create_order_from_cart_data(cart, order_number, attrs, idempotency_key)
+      end)
+      |> Multi.run(:order_items, fn _repo, %{order: order, cart: cart} ->
+        create_order_items_from_cart(order, cart)
+      end)
+      |> Multi.run(:payment_result, fn _repo, %{cart: cart} ->
+        process_payment_if_requested(cart, attrs)
+      end)
+      |> Multi.run(:order_with_payment, fn _repo,
+                                           %{order: order, payment_result: payment_result} ->
+        apply_payment_result(order, payment_result)
+      end)
+      |> Multi.run(:status_history, fn _repo, %{order_with_payment: order} ->
+        create_initial_status_history(order)
+      end)
+      |> Multi.run(:coupon_usage, fn _repo, %{cart: cart, order_with_payment: order} ->
+        case record_coupon_usage_if_needed(cart, order) do
+          :ok -> {:ok, :ok}
+          {:error, reason} -> {:error, reason}
+        end
+      end)
+      |> Multi.run(:updated_cart, fn _repo, %{cart: cart} ->
+        mark_cart_as_converted(cart)
+      end)
+      |> Multi.run(:preloaded_order, fn _repo, %{order_with_payment: order} ->
+        {:ok, repo().preload(order, [:items, :status_history])}
+      end)
+      |> repo().transaction()
 
     case result do
-      {:ok, order} ->
+      {:ok, %{preloaded_order: order}} ->
         Events.broadcast_order_created(order)
         {:ok, order}
 
-      {:error, reason} ->
+      {:error, :order, %Ecto.Changeset{} = changeset, _changes}
+      when not is_nil(idempotency_key) ->
+        handle_idempotency_conflict(changeset, idempotency_key, cart_id)
+
+      {:error, _step, reason, _changes} ->
         {:error, reason}
     end
   end
@@ -231,35 +280,39 @@ defmodule Mercato.Orders do
     changed_by = Keyword.get(opts, :changed_by)
     notes = Keyword.get(opts, :notes)
 
-    repo().transaction(fn ->
-      with {:ok, order} <- get_order(order_id) do
-        old_status = order.status
+    with {:ok, order} <- get_order(order_id) do
+      old_status = order.status
 
-        # Update order status
-        case order
-             |> Order.status_changeset(%{status: new_status})
-             |> repo().update() do
-          {:ok, updated_order} ->
-            # Create status history entry
-            {:ok, _history} =
-              create_status_history_entry(order_id, old_status, new_status, changed_by, notes)
+      result =
+        Multi.new()
+        |> Multi.update(:order, Order.status_changeset(order, %{status: new_status}))
+        |> Multi.run(:history, fn _repo, %{order: updated_order} ->
+          create_status_history_entry(
+            order_id,
+            old_status,
+            updated_order.status,
+            changed_by,
+            notes
+          )
+        end)
+        |> Multi.run(:status_change_logic, fn _repo, %{order: updated_order} ->
+          :ok = handle_status_change(updated_order, old_status, updated_order.status)
+          {:ok, :ok}
+        end)
+        |> Multi.run(:preloaded_order, fn _repo, %{order: updated_order} ->
+          {:ok, repo().preload(updated_order, [:items, :status_history], force: true)}
+        end)
+        |> repo().transaction()
 
-            # Handle status-specific logic
-            handle_status_change(updated_order, old_status, new_status)
+      case result do
+        {:ok, %{preloaded_order: updated_order}} ->
+          Events.broadcast_order_status_changed(updated_order, old_status, updated_order.status)
+          {:ok, updated_order}
 
-            # Broadcast status change event
-            Events.broadcast_order_status_changed(updated_order, old_status, new_status)
-
-            repo().preload(updated_order, [:items, :status_history], force: true)
-
-          {:error, changeset} ->
-            repo().rollback(changeset)
-        end
-      else
-        {:error, reason} ->
-          repo().rollback(reason)
+        {:error, _step, reason, _changes} ->
+          {:error, reason}
       end
-    end)
+    end
   end
 
   @doc """
@@ -450,7 +503,8 @@ defmodule Mercato.Orders do
           {:error, {:authorization_failed, reason}}
       end
     else
-      {:ok, nil} # No payment gateway configured, proceed without payment
+      # No payment gateway configured, proceed without payment
+      {:ok, nil}
     end
   end
 
@@ -483,11 +537,12 @@ defmodule Mercato.Orders do
     # Check if order number already exists (very unlikely but possible)
     case repo().get_by(Order, order_number: order_number) do
       nil -> {:ok, order_number}
-      _existing -> generate_order_number() # Retry with new number
+      # Retry with new number
+      _existing -> generate_order_number()
     end
   end
 
-  defp create_order_from_cart_data(cart, order_number, attrs, payment_result) do
+  defp create_order_from_cart_data(cart, order_number, attrs, idempotency_key) do
     # Set shipping address to billing address if not provided
     billing_address = get_attr(attrs, :billing_address)
     shipping_address = get_attr(attrs, :shipping_address, billing_address)
@@ -495,8 +550,9 @@ defmodule Mercato.Orders do
     order_attrs =
       attrs
       |> Map.put(:order_number, order_number)
+      |> Map.put(:source_cart_id, cart.id)
       |> Map.put(:user_id, cart.user_id)
-      |> Map.put(:status, determine_initial_status(payment_result))
+      |> Map.put(:status, "pending")
       |> Map.put(:subtotal, cart.subtotal)
       |> Map.put(:discount_total, cart.discount_total)
       |> Map.put(:shipping_total, cart.shipping_total)
@@ -505,11 +561,25 @@ defmodule Mercato.Orders do
       |> Map.put(:applied_coupon_id, cart.applied_coupon_id)
       |> Map.put(:referral_code_id, cart.referral_code_id)
       |> Map.put(:shipping_address, shipping_address)
-      |> Map.put(:payment_transaction_id, get_transaction_id(payment_result))
+      |> Map.put(:payment_transaction_id, get_attr(attrs, :payment_transaction_id))
+      |> Map.put(:idempotency_key, idempotency_key)
 
     %Order{}
     |> Order.create_changeset(order_attrs)
     |> repo().insert()
+  end
+
+  defp apply_payment_result(order, nil), do: {:ok, order}
+
+  defp apply_payment_result(order, payment_result) do
+    update_attrs = %{
+      status: determine_initial_status(payment_result),
+      payment_transaction_id: get_transaction_id(payment_result)
+    }
+
+    order
+    |> Ecto.Changeset.change(update_attrs)
+    |> repo().update()
   end
 
   defp create_order_items_from_cart(order, cart) do
@@ -593,6 +663,54 @@ defmodule Mercato.Orders do
     Map.get(attrs, key, Map.get(attrs, Atom.to_string(key), default))
   end
 
+  defp normalize_attrs(attrs) when is_map(attrs), do: attrs
+  defp normalize_attrs(attrs) when is_list(attrs), do: Map.new(attrs)
+
+  defp get_idempotency_key(attrs) do
+    attrs
+    |> get_attr(:idempotency_key)
+    |> normalize_idempotency_key()
+  end
+
+  defp normalize_idempotency_key(key) when is_binary(key) do
+    case String.trim(key) do
+      "" -> nil
+      normalized_key -> normalized_key
+    end
+  end
+
+  defp normalize_idempotency_key(_key), do: nil
+
+  defp get_order_by_idempotency_key(nil, _cart_id), do: :not_found
+
+  defp get_order_by_idempotency_key(idempotency_key, cart_id) do
+    case repo().get_by(Order, idempotency_key: idempotency_key, source_cart_id: cart_id) do
+      nil ->
+        :not_found
+
+      order ->
+        {:ok, repo().preload(order, [:items, :status_history])}
+    end
+  end
+
+  defp handle_idempotency_conflict(changeset, idempotency_key, cart_id) do
+    if idempotency_key_unique_conflict?(changeset) do
+      case get_order_by_idempotency_key(idempotency_key, cart_id) do
+        {:ok, order} -> {:ok, order}
+        :not_found -> {:error, changeset}
+      end
+    else
+      {:error, changeset}
+    end
+  end
+
+  defp idempotency_key_unique_conflict?(%Ecto.Changeset{errors: errors}) do
+    Enum.any?(errors, fn
+      {:idempotency_key, {_message, opts}} -> opts[:constraint] == :unique
+      _ -> false
+    end)
+  end
+
   defp create_status_history_entry(order_id, from_status, to_status, changed_by, notes) do
     %OrderStatusHistory{}
     |> OrderStatusHistory.changeset(%{
@@ -610,6 +728,21 @@ defmodule Mercato.Orders do
     cart
     |> Cart.Cart.status_changeset(%{status: "converted"})
     |> repo().update()
+  end
+
+  defp record_coupon_usage_if_needed(%{applied_coupon_id: nil}, _order), do: :ok
+
+  defp record_coupon_usage_if_needed(cart, order) do
+    case repo().get(Coupons.Coupon, cart.applied_coupon_id) do
+      nil ->
+        {:error, :coupon_not_found}
+
+      coupon ->
+        case Coupons.record_coupon_usage(coupon, order.id, cart.user_id) do
+          {:ok, _usage} -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+    end
   end
 
   defp handle_status_change(order, old_status, new_status) do
@@ -638,29 +771,6 @@ defmodule Mercato.Orders do
     end
   end
 
-  defp reserve_inventory_for_order(order) do
-    # Reserve stock for each order item
-    order = repo().preload(order, :items)
-
-    Enum.each(order.items, fn item ->
-      opts = if item.variant_id, do: [variant_id: item.variant_id], else: []
-
-      case Catalog.reserve_stock(item.product_id, item.quantity, opts) do
-        :ok ->
-          Logger.debug("Reserved #{item.quantity} units of product #{item.product_id} for order #{order.order_number}")
-          Events.broadcast_stock_reserved(item.product_id, item.quantity)
-
-        {:error, :insufficient_stock} ->
-          Logger.warning("Insufficient stock for product #{item.product_id} in order #{order.order_number}")
-
-        {:error, reason} ->
-          Logger.error("Failed to reserve stock for product #{item.product_id}: #{inspect(reason)}")
-      end
-    end)
-
-    :ok
-  end
-
   @doc """
   Creates an order from a subscription renewal.
 
@@ -676,21 +786,31 @@ defmodule Mercato.Orders do
       ...> })
       {:ok, %Order{}}
   """
-  def create_order_from_subscription(subscription, attrs) do
-    repo().transaction(fn ->
-      with {:ok, order_number} <- generate_order_number(),
-           {:ok, order} <- create_order_from_subscription_data(subscription, order_number, attrs),
-           {:ok, _order_item} <- create_order_item_from_subscription(order, subscription) do
-        # Broadcast order created event
-        Events.broadcast_order_created(order)
+  def create_order_from_subscription(subscription, attrs, opts \\ []) do
+    broadcast? = Keyword.get(opts, :broadcast?, true)
 
-        # Return order with preloaded associations
-        repo().preload(order, [:items, :status_history])
-      else
-        {:error, reason} ->
-          repo().rollback(reason)
-      end
-    end)
+    result =
+      Multi.new()
+      |> Multi.run(:order_number, fn _repo, _changes -> generate_order_number() end)
+      |> Multi.run(:order, fn _repo, %{order_number: order_number} ->
+        create_order_from_subscription_data(subscription, order_number, attrs)
+      end)
+      |> Multi.run(:order_item, fn _repo, %{order: order} ->
+        create_order_item_from_subscription(order, subscription)
+      end)
+      |> Multi.run(:preloaded_order, fn _repo, %{order: order} ->
+        {:ok, repo().preload(order, [:items, :status_history])}
+      end)
+      |> repo().transaction()
+
+    case result do
+      {:ok, %{preloaded_order: order}} ->
+        if broadcast?, do: Events.broadcast_order_created(order)
+        {:ok, order}
+
+      {:error, _step, reason, _changes} ->
+        {:error, reason}
+    end
   end
 
   defp release_inventory_for_order(order) do
@@ -702,11 +822,16 @@ defmodule Mercato.Orders do
 
       case Catalog.release_stock(item.product_id, item.quantity, opts) do
         :ok ->
-          Logger.debug("Released #{item.quantity} units of product #{item.product_id} for order #{order.order_number}")
+          Logger.debug(
+            "Released #{item.quantity} units of product #{item.product_id} for order #{order.order_number}"
+          )
+
           Events.broadcast_stock_released(item.product_id, item.quantity)
 
         {:error, reason} ->
-          Logger.error("Failed to release stock for product #{item.product_id}: #{inspect(reason)}")
+          Logger.error(
+            "Failed to release stock for product #{item.product_id}: #{inspect(reason)}"
+          )
       end
     end)
 
@@ -728,6 +853,7 @@ defmodule Mercato.Orders do
   defp create_order_item_from_subscription(order, subscription) do
     # Get product information for the subscription
     product = repo().get!(Mercato.Catalog.Product, subscription.product_id)
+
     variant =
       if subscription.variant_id,
         do: repo().get(Mercato.Catalog.ProductVariant, subscription.variant_id),
@@ -741,7 +867,8 @@ defmodule Mercato.Orders do
       order_id: order.id,
       product_id: subscription.product_id,
       variant_id: subscription.variant_id,
-      quantity: 1, # Subscriptions are typically quantity 1
+      # Subscriptions are typically quantity 1
+      quantity: 1,
       unit_price: subscription.billing_amount,
       total_price: subscription.billing_amount,
       product_snapshot: product_snapshot
@@ -778,11 +905,17 @@ defmodule Mercato.Orders do
       referral_code ->
         case Referrals.track_conversion(referral_code.code, order.id) do
           {:ok, commission} ->
-            Logger.info("Created referral commission #{commission.id} for order #{order.order_number}")
+            Logger.info(
+              "Created referral commission #{commission.id} for order #{order.order_number}"
+            )
+
             :ok
 
           {:error, reason} ->
-            Logger.error("Failed to create referral commission for order #{order.order_number}: #{inspect(reason)}")
+            Logger.error(
+              "Failed to create referral commission for order #{order.order_number}: #{inspect(reason)}"
+            )
+
             :ok
         end
     end

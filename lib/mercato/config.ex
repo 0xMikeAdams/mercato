@@ -62,11 +62,15 @@ defmodule Mercato.Config do
 
     # 1. Check runtime database setting (highest priority)
     case get_runtime_setting(key_string) do
-      {:ok, value} -> value
+      {:ok, value} ->
+        value
+
       {:error, :not_found} ->
         # 2. Check application configuration
         case get_app_config(key) do
-          {:ok, value} -> value
+          {:ok, value} ->
+            value
+
           {:error, :not_found} ->
             # 3. Check default values (lowest priority)
             get_default_value(key)
@@ -114,6 +118,7 @@ defmodule Mercato.Config do
         # Update existing setting
         repo = Mercato.repo()
         setting = repo.get_by!(StoreSetting, key: key_string)
+
         setting
         |> StoreSetting.changeset(attrs)
         |> repo.update()
@@ -125,6 +130,7 @@ defmodule Mercato.Config do
       {:error, :not_found} ->
         # Create new setting
         repo = Mercato.repo()
+
         %StoreSetting{}
         |> StoreSetting.changeset(attrs)
         |> repo.insert()
@@ -184,7 +190,9 @@ defmodule Mercato.Config do
     repo = Mercato.repo()
 
     case repo.get_by(StoreSetting, key: key_string) do
-      nil -> {:error, :not_found}
+      nil ->
+        {:error, :not_found}
+
       setting ->
         case repo.delete(setting) do
           {:ok, _setting} -> :ok
@@ -213,7 +221,9 @@ defmodule Mercato.Config do
     repo = Mercato.repo()
 
     case repo.get_by(StoreSetting, key: key_string) do
-      nil -> {:error, :not_found}
+      nil ->
+        {:error, :not_found}
+
       %StoreSetting{value: stored_value, value_type: value_type} ->
         # Unwrap non-map values
         actual_value =
@@ -246,7 +256,9 @@ defmodule Mercato.Config do
 
   defp get_all_app_config do
     case Application.get_all_env(:mercato) do
-      [] -> %{}
+      [] ->
+        %{}
+
       config ->
         config
         |> Enum.filter(fn {key, _value} -> is_atom(key) end)
@@ -276,7 +288,14 @@ defmodule Mercato.Config do
             Map.get(stored_value, "value")
         end
 
-      {String.to_atom(key), actual_value}
+      normalized_key =
+        try do
+          String.to_existing_atom(key)
+        rescue
+          ArgumentError -> key
+        end
+
+      {normalized_key, actual_value}
     end)
     |> Enum.into(%{})
   end
@@ -286,7 +305,8 @@ defmodule Mercato.Config do
   defp determine_value_type(value) when is_boolean(value), do: "boolean"
   defp determine_value_type(%Decimal{}), do: "decimal"
   defp determine_value_type(value) when is_map(value), do: "map"
-  defp determine_value_type(_value), do: "string"  # fallback
+  # fallback
+  defp determine_value_type(_value), do: "string"
 
   # Default values for common store settings
   defp get_default_value(:currency), do: "USD"
@@ -297,14 +317,17 @@ defmodule Mercato.Config do
   defp get_default_value(:inventory_tracking_enabled), do: true
   defp get_default_value(:tax_inclusive_prices), do: false
   defp get_default_value(:default_tax_rate), do: "0.0"
-  defp get_default_value(:store_address), do: %{
-    "line1" => "",
-    "line2" => "",
-    "city" => "",
-    "state" => "",
-    "postal_code" => "",
-    "country" => "US"
-  }
+
+  defp get_default_value(:store_address),
+    do: %{
+      "line1" => "",
+      "line2" => "",
+      "city" => "",
+      "state" => "",
+      "postal_code" => "",
+      "country" => "US"
+    }
+
   defp get_default_value(:email_notifications_enabled), do: true
   defp get_default_value(:order_number_prefix), do: "ORD"
   defp get_default_value(:cart_expiry_days), do: 30

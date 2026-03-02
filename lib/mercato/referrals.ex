@@ -87,7 +87,7 @@ defmodule Mercato.Referrals do
   """
   def get_referral_code(code, opts \\ []) do
     normalized_code = String.upcase(code)
-    query = from rc in ReferralCode, where: rc.code == ^normalized_code and rc.status == "active"
+    query = from(rc in ReferralCode, where: rc.code == ^normalized_code and rc.status == "active")
 
     case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
@@ -109,7 +109,7 @@ defmodule Mercato.Referrals do
       {:error, :not_found}
   """
   def get_referral_code_by_user(user_id, opts \\ []) do
-    query = from rc in ReferralCode, where: rc.user_id == ^user_id
+    query = from(rc in ReferralCode, where: rc.user_id == ^user_id)
 
     case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
@@ -135,7 +135,7 @@ defmodule Mercato.Referrals do
       [%ReferralCode{status: "active"}, ...]
   """
   def list_referral_codes(opts \\ []) do
-    query = from rc in ReferralCode
+    query = from(rc in ReferralCode)
 
     query
     |> filter_by_user_id(opts[:user_id])
@@ -188,10 +188,13 @@ defmodule Mercato.Referrals do
           )
           |> repo().insert()
 
-        # Increment click count
-        referral_code
-        |> Ecto.Changeset.change(clicks_count: referral_code.clicks_count + 1)
-        |> repo().update!()
+        {updated_count, _} =
+          from(rc in ReferralCode, where: rc.id == ^referral_code.id)
+          |> repo().update_all(inc: [clicks_count: 1])
+
+        if updated_count != 1 do
+          repo().rollback(:referral_code_not_found)
+        end
 
         click
       end)
@@ -234,15 +237,13 @@ defmodule Mercato.Referrals do
           })
           |> repo().insert()
 
-        # Update referral code statistics
-        new_total_commission = Decimal.add(referral_code.total_commission, commission_amount)
+        {updated_count, _} =
+          from(rc in ReferralCode, where: rc.id == ^referral_code.id)
+          |> repo().update_all(inc: [conversions_count: 1, total_commission: commission_amount])
 
-        referral_code
-        |> Ecto.Changeset.change(
-          conversions_count: referral_code.conversions_count + 1,
-          total_commission: new_total_commission
-        )
-        |> repo().update!()
+        if updated_count != 1 do
+          repo().rollback(:referral_code_not_found)
+        end
 
         commission
       end)
@@ -317,7 +318,10 @@ defmodule Mercato.Referrals do
 
         conversion_rate =
           if referral_code.clicks_count > 0 do
-            Decimal.div(Decimal.new(referral_code.conversions_count), Decimal.new(referral_code.clicks_count))
+            Decimal.div(
+              Decimal.new(referral_code.conversions_count),
+              Decimal.new(referral_code.clicks_count)
+            )
             |> Decimal.mult(100)
             |> Decimal.round(2)
           else
@@ -384,7 +388,7 @@ defmodule Mercato.Referrals do
       [%Commission{status: "pending"}, ...]
   """
   def list_commissions(opts \\ []) do
-    query = from c in Commission
+    query = from(c in Commission)
 
     query
     |> filter_commissions_by_referral_code(opts[:referral_code_id])
@@ -402,15 +406,18 @@ defmodule Mercato.Referrals do
     do: from(c in query, where: c.referral_code_id == ^referral_code_id)
 
   defp filter_commissions_by_status(query, nil), do: query
-  defp filter_commissions_by_status(query, status), do: from(c in query, where: c.status == ^status)
+
+  defp filter_commissions_by_status(query, status),
+    do: from(c in query, where: c.status == ^status)
 
   defp filter_commissions_by_user(query, nil), do: query
 
   defp filter_commissions_by_user(query, user_id) do
-    from c in query,
+    from(c in query,
       join: rc in ReferralCode,
       on: c.referral_code_id == rc.id,
       where: rc.user_id == ^user_id
+    )
   end
 
   defp maybe_limit_commissions(query, nil), do: query
@@ -451,7 +458,8 @@ defmodule Mercato.Referrals do
 
     case repo().get_by(ReferralCode, code: code) do
       nil -> code
-      _ -> generate_unique_code() # Retry if code already exists
+      # Retry if code already exists
+      _ -> generate_unique_code()
     end
   end
 

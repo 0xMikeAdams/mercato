@@ -64,13 +64,12 @@ defmodule Mercato.Cart.Calculator do
   def calculate_discount(%Cart{applied_coupon_id: coupon_id} = cart) when not is_nil(coupon_id) do
     alias Mercato.Coupons
 
-    try do
-      coupon = Coupons.get_coupon!(coupon_id)
-      {:ok, discount_amount} = Coupons.apply_coupon(coupon, cart)
-      discount_amount
-    rescue
-      Ecto.NoResultsError ->
-        # Coupon no longer exists, return zero discount
+    case Coupons.get_coupon(coupon_id) do
+      {:ok, coupon} ->
+        {:ok, discount_amount} = Coupons.apply_coupon(coupon, cart)
+        discount_amount
+
+      {:error, :not_found} ->
         Decimal.new("0.00")
     end
   end

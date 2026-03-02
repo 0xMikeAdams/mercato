@@ -1,7 +1,11 @@
 defmodule Mercato.OrdersTest do
   use ExUnit.Case, async: true
 
-  alias Mercato.{Orders, Cart, Catalog, Repo}
+  import Ecto.Query, only: [from: 2]
+
+  alias Mercato.{Orders, Cart, Catalog, Coupons, Repo}
+  alias Mercato.Coupons.CouponUsage
+  alias Mercato.Orders.Order
 
   setup do
     # Explicitly get a connection for this test
@@ -13,14 +17,15 @@ defmodule Mercato.OrdersTest do
   describe "orders" do
     test "create_order_from_cart/2 creates an order from cart contents" do
       # Create a product
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product",
-        price: Decimal.new("29.99"),
-        sku: "TEST-001",
-        product_type: "simple",
-        stock_quantity: 100
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product",
+          price: Decimal.new("29.99"),
+          sku: "TEST-001",
+          product_type: "simple",
+          stock_quantity: 100
+        })
 
       # Create a cart and add the product
       {:ok, cart} = Cart.create_cart(%{cart_token: "test-token"})
@@ -68,14 +73,15 @@ defmodule Mercato.OrdersTest do
 
     test "update_status/2 updates order status and creates history entry" do
       # Create a simple order
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product-2",
-        price: Decimal.new("19.99"),
-        sku: "TEST-002",
-        product_type: "simple",
-        stock_quantity: 100
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product-2",
+          price: Decimal.new("19.99"),
+          sku: "TEST-002",
+          product_type: "simple",
+          stock_quantity: 100
+        })
 
       {:ok, cart} = Cart.create_cart(%{cart_token: "test-token-2"})
       {:ok, cart} = Cart.add_item(cart.id, product.id, 1)
@@ -107,14 +113,15 @@ defmodule Mercato.OrdersTest do
 
     test "cancel_order/2 cancels an order and updates status" do
       # Create a simple order
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product-3",
-        price: Decimal.new("39.99"),
-        sku: "TEST-003",
-        product_type: "simple",
-        stock_quantity: 100
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product-3",
+          price: Decimal.new("39.99"),
+          sku: "TEST-003",
+          product_type: "simple",
+          stock_quantity: 100
+        })
 
       {:ok, cart} = Cart.create_cart(%{cart_token: "test-token-3"})
       {:ok, cart} = Cart.add_item(cart.id, product.id, 1)
@@ -145,14 +152,15 @@ defmodule Mercato.OrdersTest do
 
     test "list_orders/1 returns orders with filtering" do
       # Create two orders with different statuses
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product-4",
-        price: Decimal.new("49.99"),
-        sku: "TEST-004",
-        product_type: "simple",
-        stock_quantity: 100
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product-4",
+          price: Decimal.new("49.99"),
+          sku: "TEST-004",
+          product_type: "simple",
+          stock_quantity: 100
+        })
 
       # First order
       {:ok, cart1} = Cart.create_cart(%{cart_token: "test-token-4"})
@@ -190,6 +198,152 @@ defmodule Mercato.OrdersTest do
       processing_orders = Orders.list_orders(status: "processing")
       assert Enum.any?(processing_orders, &(&1.id == order2.id))
       assert not Enum.any?(processing_orders, &(&1.id == order1.id))
+    end
+
+    test "create_order_from_cart/2 records coupon usage when coupon is applied" do
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Coupon Product",
+          slug: "coupon-product-#{System.unique_integer([:positive])}",
+          price: Decimal.new("50.00"),
+          sku: "CPN-#{System.unique_integer([:positive])}",
+          product_type: "simple",
+          stock_quantity: 100
+        })
+
+      {:ok, coupon} =
+        Coupons.create_coupon(%{
+          code: "ORDER10",
+          discount_type: "percentage",
+          discount_value: Decimal.new("10"),
+          valid_from: DateTime.utc_now()
+        })
+
+      user_id = Ecto.UUID.generate()
+
+      {:ok, cart} =
+        Cart.create_cart(%{
+          cart_token: "order-coupon-#{System.unique_integer([:positive])}",
+          user_id: user_id
+        })
+
+      {:ok, cart} = Cart.add_item(cart.id, product.id, 2)
+      {:ok, _cart} = Cart.apply_coupon(cart.id, coupon.code)
+
+      order_attrs = %{
+        billing_address: %{
+          "line1" => "222 Coupon St",
+          "city" => "Discount City",
+          "state" => "CA",
+          "postal_code" => "90210",
+          "country" => "US"
+        },
+        payment_method: "credit_card"
+      }
+
+      {:ok, order} = Orders.create_order_from_cart(cart.id, order_attrs)
+
+      usage = Repo.get_by(CouponUsage, coupon_id: coupon.id, order_id: order.id)
+      assert usage
+      assert usage.user_id == user_id
+
+      updated_coupon = Coupons.get_coupon!(coupon.id)
+      assert updated_coupon.usage_count == 1
+    end
+
+    test "create_order_from_cart/2 is idempotent with idempotency_key" do
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Idempotent Product",
+          slug: "idempotent-product-#{System.unique_integer([:positive])}",
+          price: Decimal.new("75.00"),
+          sku: "IDEMP-#{System.unique_integer([:positive])}",
+          product_type: "simple",
+          stock_quantity: 100
+        })
+
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "idempotent-cart-#{System.unique_integer([:positive])}"})
+
+      {:ok, _cart} = Cart.add_item(cart.id, product.id, 1)
+
+      idempotency_key = "order-create-#{Ecto.UUID.generate()}"
+
+      order_attrs = %{
+        billing_address: %{
+          "line1" => "333 Safe Retry Blvd",
+          "city" => "Stable",
+          "state" => "ON",
+          "postal_code" => "A1A1A1",
+          "country" => "CA"
+        },
+        payment_method: "credit_card",
+        idempotency_key: idempotency_key
+      }
+
+      {:ok, first_order} = Orders.create_order_from_cart(cart.id, order_attrs)
+      {:ok, second_order} = Orders.create_order_from_cart(cart.id, order_attrs)
+
+      assert first_order.id == second_order.id
+      assert first_order.order_number == second_order.order_number
+      assert first_order.idempotency_key == idempotency_key
+
+      idempotent_orders =
+        from(o in Order,
+          where: o.idempotency_key == ^idempotency_key and o.source_cart_id == ^cart.id
+        )
+        |> Repo.all()
+
+      assert length(idempotent_orders) == 1
+    end
+
+    test "create_order_from_cart/2 scopes idempotency_key to cart" do
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Scoped Idempotency Product",
+          slug: "scoped-idempotency-product-#{System.unique_integer([:positive])}",
+          price: Decimal.new("40.00"),
+          sku: "SCOPE-#{System.unique_integer([:positive])}",
+          product_type: "simple",
+          stock_quantity: 100
+        })
+
+      {:ok, cart1} =
+        Cart.create_cart(%{
+          cart_token: "scoped-idempotency-cart-1-#{System.unique_integer([:positive])}"
+        })
+
+      {:ok, _cart1} = Cart.add_item(cart1.id, product.id, 1)
+
+      {:ok, cart2} =
+        Cart.create_cart(%{
+          cart_token: "scoped-idempotency-cart-2-#{System.unique_integer([:positive])}"
+        })
+
+      {:ok, _cart2} = Cart.add_item(cart2.id, product.id, 1)
+
+      idempotency_key = "order-create-#{Ecto.UUID.generate()}"
+
+      order_attrs = %{
+        billing_address: %{
+          "line1" => "444 Scoped Retry Ave",
+          "city" => "Scoped",
+          "state" => "QC",
+          "postal_code" => "H1H1H1",
+          "country" => "CA"
+        },
+        payment_method: "credit_card",
+        idempotency_key: idempotency_key
+      }
+
+      {:ok, first_order} = Orders.create_order_from_cart(cart1.id, order_attrs)
+      {:ok, second_order} = Orders.create_order_from_cart(cart2.id, order_attrs)
+
+      refute first_order.id == second_order.id
+      assert first_order.idempotency_key == idempotency_key
+      assert second_order.idempotency_key == idempotency_key
+      assert first_order.source_cart_id == cart1.id
+      assert second_order.source_cart_id == cart2.id
     end
   end
 end

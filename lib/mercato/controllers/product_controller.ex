@@ -1,7 +1,7 @@
 defmodule Mercato.Controllers.ProductController do
   @moduledoc false
 
-  use Phoenix.Controller, namespace: false
+  use Phoenix.Controller, formats: [:json], namespace: false
 
   alias Mercato.Catalog
   alias Mercato.Controllers.Serializer
@@ -17,11 +17,11 @@ defmodule Mercato.Controllers.ProductController do
   end
 
   def show(conn, %{"id" => id}) do
-    try do
-      product = Catalog.get_product!(id, preload: [:variants, :categories, :tags])
-      json(conn, %{data: Serializer.serialize(product)})
-    rescue
-      Ecto.NoResultsError ->
+    case Catalog.get_product(id, preload: [:variants, :categories, :tags]) do
+      {:ok, product} ->
+        json(conn, %{data: Serializer.serialize(product)})
+
+      {:error, :not_found} ->
         conn
         |> put_status(:not_found)
         |> json(%{error: "not_found"})

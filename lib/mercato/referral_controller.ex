@@ -18,7 +18,7 @@ defmodule Mercato.ReferralController do
         trust_forwarded_headers: false
   """
 
-  use Phoenix.Controller, namespace: false
+  use Phoenix.Controller, formats: [:json], namespace: false
   import Phoenix.Controller, except: [redirect: 2]
 
   alias Mercato.Events
@@ -49,7 +49,7 @@ defmodule Mercato.ReferralController do
         |> Phoenix.Controller.redirect(external: redirect_url)
 
       {:error, :not_found} ->
-        Logger.warn("Invalid referral code accessed", referral_code: code)
+        Logger.warning("Invalid referral code accessed", referral_code: code)
         Phoenix.Controller.redirect(conn, external: redirect_url)
 
       {:error, reason} ->

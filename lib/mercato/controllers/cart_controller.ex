@@ -1,7 +1,7 @@
 defmodule Mercato.Controllers.CartController do
   @moduledoc false
 
-  use Phoenix.Controller, namespace: false
+  use Phoenix.Controller, formats: [:json], namespace: false
 
   alias Mercato.Cart
   alias Mercato.Controllers.Serializer
@@ -31,7 +31,10 @@ defmodule Mercato.Controllers.CartController do
       {:error, changeset} ->
         conn
         |> put_status(:unprocessable_entity)
-        |> json(%{error: "validation_error", details: Serializer.serialize(changeset_errors(changeset))})
+        |> json(%{
+          error: "validation_error",
+          details: Serializer.serialize(changeset_errors(changeset))
+        })
     end
   end
 
@@ -39,20 +42,25 @@ defmodule Mercato.Controllers.CartController do
     with {:ok, cart} <- Cart.get_cart_by_token(cart_token),
          {:ok, product_id} <- fetch_param(params, "product_id"),
          {:ok, quantity} <- parse_int(params["quantity"], 1),
-         {:ok, cart} <- Cart.add_item(cart.id, product_id, quantity, variant_id: params["variant_id"]) do
+         :ok <- validate_positive_quantity(quantity),
+         {:ok, cart} <-
+           Cart.add_item(cart.id, product_id, quantity, variant_id: params["variant_id"]) do
       json(conn, %{data: Serializer.serialize(cart)})
     else
       {:error, :not_found} ->
         conn |> put_status(:not_found) |> json(%{error: "not_found"})
 
       {:error, reason} ->
-        conn |> put_status(:unprocessable_entity) |> json(%{error: "unprocessable_entity", reason: inspect(reason)})
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "unprocessable_entity", reason: inspect(reason)})
     end
   end
 
   def update_item(conn, %{"cart_token" => cart_token, "item_id" => item_id} = params) do
     with {:ok, cart} <- Cart.get_cart_by_token(cart_token),
          {:ok, quantity} <- parse_int(params["quantity"], nil),
+         :ok <- validate_positive_quantity(quantity),
          {:ok, cart} <- Cart.update_item_quantity(cart.id, item_id, quantity) do
       json(conn, %{data: Serializer.serialize(cart)})
     else
@@ -60,7 +68,9 @@ defmodule Mercato.Controllers.CartController do
         conn |> put_status(:not_found) |> json(%{error: "not_found"})
 
       {:error, reason} ->
-        conn |> put_status(:unprocessable_entity) |> json(%{error: "unprocessable_entity", reason: inspect(reason)})
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "unprocessable_entity", reason: inspect(reason)})
     end
   end
 
@@ -73,7 +83,9 @@ defmodule Mercato.Controllers.CartController do
         conn |> put_status(:not_found) |> json(%{error: "not_found"})
 
       {:error, reason} ->
-        conn |> put_status(:unprocessable_entity) |> json(%{error: "unprocessable_entity", reason: inspect(reason)})
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "unprocessable_entity", reason: inspect(reason)})
     end
   end
 
@@ -95,6 +107,9 @@ defmodule Mercato.Controllers.CartController do
       _ -> {:error, :invalid_integer}
     end
   end
+
+  defp validate_positive_quantity(quantity) when is_integer(quantity) and quantity > 0, do: :ok
+  defp validate_positive_quantity(_quantity), do: {:error, :invalid_quantity}
 
   defp fetch_param(params, key) do
     case Map.get(params, key) do

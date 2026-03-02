@@ -45,9 +45,9 @@ defmodule Mercato.Config.StoreSetting do
   @value_types ~w(string integer boolean map decimal)
 
   schema "store_settings" do
-    field :key, :string
-    field :value, :map
-    field :value_type, :string
+    field(:key, :string)
+    field(:value, :map)
+    field(:value_type, :string)
 
     timestamps(type: :utc_datetime)
   end
@@ -69,7 +69,9 @@ defmodule Mercato.Config.StoreSetting do
     store_setting
     |> cast(attrs, [:key, :value, :value_type])
     |> validate_required([:key, :value, :value_type])
-    |> validate_format(:key, ~r/^[a-z][a-z0-9_]*$/, message: "must be lowercase alphanumeric with underscores")
+    |> validate_format(:key, ~r/^[a-z][a-z0-9_]*$/,
+      message: "must be lowercase alphanumeric with underscores"
+    )
     |> validate_inclusion(:value_type, @value_types)
     |> validate_value_type_consistency()
     |> unique_constraint(:key)
@@ -81,24 +83,36 @@ defmodule Mercato.Config.StoreSetting do
     value_type = get_field(changeset, :value_type)
 
     # Extract the actual value from the stored format
-    actual_value = case {value_type, stored_value} do
-      {"map", v} when is_map(v) -> v
-      {_, %{"value" => v}} -> v
-      _ -> stored_value
-    end
+    actual_value =
+      case {value_type, stored_value} do
+        {"map", v} when is_map(v) -> v
+        {_, %{"value" => v}} -> v
+        _ -> stored_value
+      end
 
     case {value_type, actual_value} do
-      {"string", v} when is_binary(v) -> changeset
-      {"integer", v} when is_integer(v) -> changeset
-      {"boolean", v} when is_boolean(v) -> changeset
-      {"map", v} when is_map(v) -> changeset
+      {"string", v} when is_binary(v) ->
+        changeset
+
+      {"integer", v} when is_integer(v) ->
+        changeset
+
+      {"boolean", v} when is_boolean(v) ->
+        changeset
+
+      {"map", v} when is_map(v) ->
+        changeset
+
       {"decimal", v} when is_binary(v) ->
         case Decimal.parse(v) do
-          {:ok, _} -> changeset
+          {%Decimal{}, ""} -> changeset
           :error -> add_error(changeset, :value, "does not match declared type decimal")
+          _ -> add_error(changeset, :value, "does not match declared type decimal")
         end
+
       {type, _} when type in @value_types ->
         add_error(changeset, :value, "does not match declared type #{type}")
+
       _ ->
         changeset
     end

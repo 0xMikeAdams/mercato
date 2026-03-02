@@ -40,8 +40,8 @@ defmodule Mercato.Subscriptions do
   """
 
   import Ecto.Query, warn: false
-  require Logger
 
+  alias Ecto.Multi
   alias Mercato
   alias Mercato.Subscriptions.{Subscription, SubscriptionCycle}
   alias Mercato.Orders
@@ -124,35 +124,36 @@ defmodule Mercato.Subscriptions do
     order_direction = Keyword.get(opts, :order_direction, :desc)
 
     query =
-      from s in Subscription,
+      from(s in Subscription,
         order_by: [{^order_direction, field(s, ^order_by)}],
         limit: ^limit,
         offset: ^offset
+      )
 
     query =
       if user_id do
-        from s in query, where: s.user_id == ^user_id
+        from(s in query, where: s.user_id == ^user_id)
       else
         query
       end
 
     query =
       if status do
-        from s in query, where: s.status == ^status
+        from(s in query, where: s.status == ^status)
       else
         query
       end
 
     query =
       if billing_cycle do
-        from s in query, where: s.billing_cycle == ^billing_cycle
+        from(s in query, where: s.billing_cycle == ^billing_cycle)
       else
         query
       end
 
     query =
       if product_id do
-        from s in query, where: s.product_id == ^product_id
+        from(s in query, where: s.product_id == ^product_id)
       else
         query
       end
@@ -263,7 +264,8 @@ defmodule Mercato.Subscriptions do
     with {:ok, subscription} <- get_subscription(subscription_id) do
       if subscription.status == "paused" do
         # Calculate new next billing date from today
-        next_billing_date = calculate_next_billing_from_date(Date.utc_today(), subscription.billing_cycle)
+        next_billing_date =
+          calculate_next_billing_from_date(Date.utc_today(), subscription.billing_cycle)
 
         subscription
         |> Subscription.resume_changeset(%{next_billing_date: next_billing_date})
@@ -331,49 +333,45 @@ defmodule Mercato.Subscriptions do
       {:error, :not_found}
   """
   def process_renewal(subscription_id) do
-    repo().transaction(fn ->
-      with {:ok, subscription} <- get_subscription(subscription_id) do
-        if subscription.status == "active" &&
-           Date.compare(subscription.next_billing_date, Date.utc_today()) != :gt do
+    with {:ok, subscription} <- get_subscription(subscription_id),
+         :ok <- validate_subscription_due_for_renewal(subscription) do
+      cycle_number = get_next_cycle_number(subscription)
 
-          # Get the next cycle number
-          cycle_number = get_next_cycle_number(subscription)
+      next_billing_date =
+        calculate_next_billing_from_date(
+          subscription.next_billing_date,
+          subscription.billing_cycle
+        )
 
-          # Create subscription cycle record
-          {:ok, cycle} = create_subscription_cycle(subscription, cycle_number)
+      result =
+        Multi.new()
+        |> Multi.run(:cycle, fn _repo, _changes ->
+          create_subscription_cycle(subscription, cycle_number)
+        end)
+        |> Multi.run(:order, fn _repo, %{cycle: cycle} ->
+          create_renewal_order(subscription, cycle)
+        end)
+        |> Multi.run(:completed_cycle, fn _repo, %{cycle: cycle, order: order} ->
+          complete_subscription_cycle(cycle, order.id)
+        end)
+        |> Multi.run(:updated_subscription, fn _repo, _changes ->
+          update_subscription_billing_date(subscription, next_billing_date)
+        end)
+        |> repo().transaction()
 
-          # Create order for the subscription
-          case create_renewal_order(subscription, cycle) do
-            {:ok, order} ->
-              # Update cycle with order ID and mark as completed
-              {:ok, _updated_cycle} = complete_subscription_cycle(cycle, order.id)
+      case result do
+        {:ok, %{order: order, updated_subscription: updated_subscription}} ->
+          Events.broadcast_order_created(order)
+          Events.broadcast_subscription_renewed(updated_subscription, order)
+          {:ok, order}
 
-              # Update subscription's next billing date
-              next_billing_date = calculate_next_billing_from_date(
-                subscription.next_billing_date,
-                subscription.billing_cycle
-              )
-
-              {:ok, _updated_subscription} = update_subscription_billing_date(subscription, next_billing_date)
-
-              # Broadcast renewal processed event
-              Events.broadcast_subscription_renewed(subscription, order)
-
-              order
-
-            {:error, reason} ->
-              # Mark cycle as failed
-              {:ok, _failed_cycle} = fail_subscription_cycle(cycle)
-              repo().rollback(reason)
-          end
-        else
-          repo().rollback(:subscription_not_due_for_renewal)
-        end
-      else
-        {:error, reason} ->
-          repo().rollback(reason)
+        {:error, _step, reason, _changes} ->
+          {:error, reason}
       end
-    end)
+    else
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @doc """
@@ -427,18 +425,50 @@ defmodule Mercato.Subscriptions do
     case billing_cycle do
       "daily" -> Date.add(date, 1)
       "weekly" -> Date.add(date, 7)
-      "monthly" -> Date.add(date, 30) # Simplified - could use proper month calculation
-      "yearly" -> Date.add(date, 365) # Simplified - could use proper year calculation
+      "monthly" -> add_months(date, 1)
+      "yearly" -> add_years(date, 1)
       _ -> date
+    end
+  end
+
+  defp validate_subscription_due_for_renewal(subscription) do
+    if subscription.status == "active" &&
+         Date.compare(subscription.next_billing_date, Date.utc_today()) != :gt do
+      :ok
+    else
+      {:error, :subscription_not_due_for_renewal}
+    end
+  end
+
+  defp add_months(%Date{} = date, months) when is_integer(months) do
+    total_months = date.year * 12 + (date.month - 1) + months
+    year = div(total_months, 12)
+    month = rem(total_months, 12) + 1
+    day = min(date.day, Calendar.ISO.days_in_month(year, month))
+
+    case Date.new(year, month, day) do
+      {:ok, shifted_date} -> shifted_date
+      {:error, _reason} -> date
+    end
+  end
+
+  defp add_years(%Date{} = date, years) when is_integer(years) do
+    year = date.year + years
+    day = min(date.day, Calendar.ISO.days_in_month(year, date.month))
+
+    case Date.new(year, date.month, day) do
+      {:ok, shifted_date} -> shifted_date
+      {:error, _reason} -> date
     end
   end
 
   defp get_next_cycle_number(subscription) do
     case repo().one(
-      from c in SubscriptionCycle,
-        where: c.subscription_id == ^subscription.id,
-        select: max(c.cycle_number)
-    ) do
+           from(c in SubscriptionCycle,
+             where: c.subscription_id == ^subscription.id,
+             select: max(c.cycle_number)
+           )
+         ) do
       nil -> 1
       max_cycle -> max_cycle + 1
     end
@@ -471,7 +501,7 @@ defmodule Mercato.Subscriptions do
 
     # Create the order (this would typically integrate with the Orders context)
     # For now, we'll create a basic order structure
-    case Orders.create_order_from_subscription(subscription, order_attrs) do
+    case Orders.create_order_from_subscription(subscription, order_attrs, broadcast?: false) do
       {:ok, order} -> {:ok, order}
       {:error, reason} -> {:error, reason}
     end
@@ -480,12 +510,6 @@ defmodule Mercato.Subscriptions do
   defp complete_subscription_cycle(cycle, order_id) do
     cycle
     |> SubscriptionCycle.complete_changeset(%{order_id: order_id})
-    |> repo().update()
-  end
-
-  defp fail_subscription_cycle(cycle) do
-    cycle
-    |> SubscriptionCycle.fail_changeset()
     |> repo().update()
   end
 

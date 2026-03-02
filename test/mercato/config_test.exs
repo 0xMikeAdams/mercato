@@ -1,6 +1,7 @@
 defmodule Mercato.ConfigTest do
   use ExUnit.Case, async: true
   alias Mercato.Config
+  alias Decimal
 
   setup do
     # Ensure we're using the test database
@@ -45,11 +46,13 @@ defmodule Mercato.ConfigTest do
       :ok = Config.put_setting(:integer_setting, 42)
       :ok = Config.put_setting(:boolean_setting, false)
       :ok = Config.put_setting(:map_setting, %{"key" => "value"})
+      :ok = Config.put_setting(:decimal_setting, Decimal.new("12.50"))
 
       assert Config.get_setting(:string_setting) == "string_value"
       assert Config.get_setting(:integer_setting) == 42
       assert Config.get_setting(:boolean_setting) == false
       assert Config.get_setting(:map_setting) == %{"key" => "value"}
+      assert Decimal.equal?(Config.get_setting(:decimal_setting), Decimal.new("12.50"))
     end
   end
 

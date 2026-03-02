@@ -18,6 +18,7 @@ defmodule Mercato.Orders.Order do
   ## Fields
 
   - `order_number`: Unique human-readable order identifier
+  - `source_cart_id`: Cart that originated this order (for cart checkouts)
   - `user_id`: Optional reference to authenticated user (nil for guest orders)
   - `status`: Current order status
   - `subtotal`: Sum of all item prices before discounts
@@ -30,6 +31,7 @@ defmodule Mercato.Orders.Order do
   - `customer_notes`: Optional notes from customer
   - `payment_method`: Payment method used (e.g., "credit_card", "paypal")
   - `payment_transaction_id`: External payment processor transaction ID
+  - `idempotency_key`: Optional request key used to deduplicate retries per cart
   - `applied_coupon_id`: Reference to applied coupon
   - `referral_code_id`: Reference to referral code if order came from referral
   """
@@ -45,24 +47,26 @@ defmodule Mercato.Orders.Order do
   @status_options ~w(pending processing completed cancelled refunded failed)
 
   schema "orders" do
-    field :order_number, :string
-    field :user_id, :binary_id
-    field :status, :string, default: "pending"
-    field :subtotal, :decimal, default: Decimal.new("0.00")
-    field :discount_total, :decimal, default: Decimal.new("0.00")
-    field :shipping_total, :decimal, default: Decimal.new("0.00")
-    field :tax_total, :decimal, default: Decimal.new("0.00")
-    field :grand_total, :decimal, default: Decimal.new("0.00")
-    field :billing_address, :map
-    field :shipping_address, :map
-    field :customer_notes, :string
-    field :payment_method, :string
-    field :payment_transaction_id, :string
-    field :applied_coupon_id, :binary_id
-    field :referral_code_id, :binary_id
+    field(:order_number, :string)
+    field(:source_cart_id, :binary_id)
+    field(:user_id, :binary_id)
+    field(:status, :string, default: "pending")
+    field(:subtotal, :decimal, default: Decimal.new("0.00"))
+    field(:discount_total, :decimal, default: Decimal.new("0.00"))
+    field(:shipping_total, :decimal, default: Decimal.new("0.00"))
+    field(:tax_total, :decimal, default: Decimal.new("0.00"))
+    field(:grand_total, :decimal, default: Decimal.new("0.00"))
+    field(:billing_address, :map)
+    field(:shipping_address, :map)
+    field(:customer_notes, :string)
+    field(:payment_method, :string)
+    field(:payment_transaction_id, :string)
+    field(:idempotency_key, :string)
+    field(:applied_coupon_id, :binary_id)
+    field(:referral_code_id, :binary_id)
 
-    has_many :items, OrderItem, foreign_key: :order_id
-    has_many :status_history, OrderStatusHistory, foreign_key: :order_id
+    has_many(:items, OrderItem, foreign_key: :order_id)
+    has_many(:status_history, OrderStatusHistory, foreign_key: :order_id)
 
     timestamps(type: :utc_datetime)
   end
@@ -74,6 +78,7 @@ defmodule Mercato.Orders.Order do
     order
     |> cast(attrs, [
       :order_number,
+      :source_cart_id,
       :user_id,
       :status,
       :subtotal,
@@ -86,6 +91,7 @@ defmodule Mercato.Orders.Order do
       :customer_notes,
       :payment_method,
       :payment_transaction_id,
+      :idempotency_key,
       :applied_coupon_id,
       :referral_code_id
     ])
@@ -107,6 +113,8 @@ defmodule Mercato.Orders.Order do
     |> validate_address(:billing_address)
     |> validate_address(:shipping_address)
     |> unique_constraint(:order_number)
+    |> unique_constraint(:idempotency_key, name: :orders_source_cart_id_idempotency_key_index)
+    |> foreign_key_constraint(:source_cart_id)
     |> foreign_key_constraint(:applied_coupon_id)
     |> foreign_key_constraint(:referral_code_id)
   end
@@ -160,7 +168,11 @@ defmodule Mercato.Orders.Order do
       if Enum.empty?(missing_fields) do
         changeset
       else
-        add_error(changeset, field, "missing required address fields: #{Enum.join(missing_fields, ", ")}")
+        add_error(
+          changeset,
+          field,
+          "missing required address fields: #{Enum.join(missing_fields, ", ")}"
+        )
       end
     else
       changeset
@@ -172,15 +184,23 @@ defmodule Mercato.Orders.Order do
     new_status = get_change(changeset, :status)
 
     if new_status && !valid_status_transition?(old_status, new_status) do
-      add_error(changeset, :status, "invalid status transition from #{old_status} to #{new_status}")
+      add_error(
+        changeset,
+        :status,
+        "invalid status transition from #{old_status} to #{new_status}"
+      )
     else
       changeset
     end
   end
 
   # Define valid status transitions
-  defp valid_status_transition?("pending", new_status) when new_status in ~w(processing cancelled failed), do: true
-  defp valid_status_transition?("processing", new_status) when new_status in ~w(completed cancelled failed), do: true
+  defp valid_status_transition?("pending", new_status)
+       when new_status in ~w(processing cancelled failed), do: true
+
+  defp valid_status_transition?("processing", new_status)
+       when new_status in ~w(completed cancelled failed), do: true
+
   defp valid_status_transition?("completed", new_status) when new_status in ~w(refunded), do: true
   defp valid_status_transition?("cancelled", _new_status), do: false
   defp valid_status_transition?("refunded", _new_status), do: false

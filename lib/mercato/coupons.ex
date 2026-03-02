@@ -54,7 +54,7 @@ defmodule Mercato.Coupons do
       [%Coupon{discount_type: "percentage"}, ...]
   """
   def list_coupons(opts \\ []) do
-    query = from c in Coupon
+    query = from(c in Coupon)
 
     query
     |> filter_by_discount_type(opts[:discount_type])
@@ -71,27 +71,30 @@ defmodule Mercato.Coupons do
   defp filter_by_status(query, "active") do
     now = DateTime.utc_now()
 
-    from c in query,
+    from(c in query,
       where:
         c.valid_from <= ^now and
           (is_nil(c.valid_until) or c.valid_until >= ^now) and
           (is_nil(c.usage_limit) or c.usage_count < c.usage_limit)
+    )
   end
 
   defp filter_by_status(query, "expired") do
     now = DateTime.utc_now()
 
-    from c in query,
+    from(c in query,
       where: not is_nil(c.valid_until) and c.valid_until < ^now
+    )
   end
 
   defp filter_by_status(query, "inactive") do
     now = DateTime.utc_now()
 
-    from c in query,
+    from(c in query,
       where:
         c.valid_from > ^now or
           (not is_nil(c.usage_limit) and c.usage_count >= c.usage_limit)
+    )
   end
 
   defp maybe_preload(query, nil), do: query
@@ -115,11 +118,29 @@ defmodule Mercato.Coupons do
       ** (Ecto.NoResultsError)
   """
   def get_coupon!(id, opts \\ []) do
-    query = from c in Coupon, where: c.id == ^id
+    query = from(c in Coupon, where: c.id == ^id)
 
     query
     |> maybe_preload(opts[:preload])
     |> repo().one!()
+  end
+
+  @doc """
+  Gets a single coupon by ID.
+
+  Returns `{:ok, coupon}` if found, `{:error, :not_found}` otherwise.
+
+  ## Options
+
+  - `:preload` - List of associations to preload
+  """
+  def get_coupon(id, opts \\ []) do
+    query = from(c in Coupon, where: c.id == ^id)
+
+    case query |> maybe_preload(opts[:preload]) |> repo().one() do
+      nil -> {:error, :not_found}
+      coupon -> {:ok, coupon}
+    end
   end
 
   @doc """
@@ -137,7 +158,7 @@ defmodule Mercato.Coupons do
   """
   def get_coupon_by_code(code, opts \\ []) do
     normalized_code = String.upcase(code)
-    query = from c in Coupon, where: c.code == ^normalized_code
+    query = from(c in Coupon, where: c.code == ^normalized_code)
 
     case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
@@ -442,23 +463,28 @@ defmodule Mercato.Coupons do
   """
   def record_coupon_usage(%Coupon{} = coupon, order_id, user_id \\ nil) do
     repo().transaction(fn ->
-      # Create usage record
-      {:ok, usage} =
-        %CouponUsage{}
-        |> CouponUsage.changeset(%{
-          coupon_id: coupon.id,
-          user_id: user_id,
-          order_id: order_id,
-          used_at: DateTime.utc_now()
-        })
-        |> repo().insert()
+      case %CouponUsage{}
+           |> CouponUsage.changeset(%{
+             coupon_id: coupon.id,
+             user_id: user_id,
+             order_id: order_id,
+             used_at: DateTime.utc_now()
+           })
+           |> repo().insert() do
+        {:ok, usage} ->
+          {updated_count, _} =
+            from(c in Coupon, where: c.id == ^coupon.id)
+            |> repo().update_all(inc: [usage_count: 1])
 
-      # Increment usage count
-      coupon
-      |> Ecto.Changeset.change(usage_count: coupon.usage_count + 1)
-      |> repo().update!()
+          if updated_count == 1 do
+            usage
+          else
+            repo().rollback(:coupon_not_found)
+          end
 
-      usage
+        {:error, changeset} ->
+          repo().rollback(changeset)
+      end
     end)
   end
 
@@ -477,7 +503,7 @@ defmodule Mercato.Coupons do
       }
   """
   def get_coupon_usage_stats(%Coupon{} = coupon) do
-    usages = repo().all(from cu in CouponUsage, where: cu.coupon_id == ^coupon.id)
+    usages = repo().all(from(cu in CouponUsage, where: cu.coupon_id == ^coupon.id))
 
     %{
       total_uses: length(usages),
@@ -502,7 +528,7 @@ defmodule Mercato.Coupons do
       [%CouponUsage{}, ...]
   """
   def list_coupon_usages(opts \\ []) do
-    query = from cu in CouponUsage
+    query = from(cu in CouponUsage)
 
     query
     |> filter_usages_by_coupon(opts[:coupon_id])
@@ -514,13 +540,17 @@ defmodule Mercato.Coupons do
   end
 
   defp filter_usages_by_coupon(query, nil), do: query
-  defp filter_usages_by_coupon(query, coupon_id), do: from(cu in query, where: cu.coupon_id == ^coupon_id)
+
+  defp filter_usages_by_coupon(query, coupon_id),
+    do: from(cu in query, where: cu.coupon_id == ^coupon_id)
 
   defp filter_usages_by_user(query, nil), do: query
   defp filter_usages_by_user(query, user_id), do: from(cu in query, where: cu.user_id == ^user_id)
 
   defp filter_usages_by_order(query, nil), do: query
-  defp filter_usages_by_order(query, order_id), do: from(cu in query, where: cu.order_id == ^order_id)
+
+  defp filter_usages_by_order(query, order_id),
+    do: from(cu in query, where: cu.order_id == ^order_id)
 
   defp maybe_limit(query, nil), do: query
   defp maybe_limit(query, limit), do: from(cu in query, limit: ^limit)
