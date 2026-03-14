@@ -62,9 +62,8 @@ defmodule Mercato.MixProject do
 
   defp description do
     """
-    A production-ready, open-source e-commerce engine for Elixir/Phoenix applications.
-    Provides real-time capabilities, extensible architecture, and comprehensive e-commerce
-    features including product catalogs, shopping carts, order management, subscriptions, and referral systems.
+    An embedded e-commerce engine for Elixir/Phoenix applications with contexts,
+    route macros, and extension points for payments, subscriptions, and referrals.
     """
   end
 
@@ -89,6 +88,7 @@ defmodule Mercato.MixProject do
       source_ref: "v#{@version}",
       extras: [
         "README.md",
+        "docs/production_integration.md",
         "CHANGELOG.md",
         "CONTRIBUTING.md",
         "LICENSE"

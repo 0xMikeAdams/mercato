@@ -14,7 +14,7 @@ defmodule Mix.Tasks.Mercato.Install do
 
   1. Copies all Mercato migrations to `priv/repo/migrations`
   2. Creates/updates `config/mercato.exs` and ensures `config/config.exs` imports it
-  3. Injects Mercato routes into your Phoenix router (basic API + referral shortlink)
+  3. Injects safe Mercato route scaffolding into your Phoenix router
 
   ## Options
 
@@ -65,7 +65,12 @@ defmodule Mix.Tasks.Mercato.Install do
 
         mix ecto.migrate
 
-    2. Start your server and hit:
+    2. Configure a real payment gateway before enabling live checkout payments.
+
+    3. Review the injected router comments and mount customer/admin routes inside your
+       own authenticated pipelines.
+
+    4. Start your server and verify:
 
         GET /api/mercato/products
         POST /api/mercato/carts
@@ -140,7 +145,8 @@ defmodule Mix.Tasks.Mercato.Install do
     config :mercato,
       repo: #{inspect(repo_module)},
       pubsub: #{inspect(pubsub_module)},
-      payment_gateway: Mercato.PaymentGateways.Dummy,
+      # Set this to your real payment gateway module before processing live payments.
+      payment_gateway: nil,
       shipping_calculator: Mercato.ShippingCalculators.FlatRate,
       tax_calculator: Mercato.TaxCalculators.Simple,
       store_url: "/",
@@ -149,9 +155,6 @@ defmodule Mix.Tasks.Mercato.Install do
       referral_cookie_http_only: true,
       referral_cookie_same_site: "Lax",
       trust_forwarded_headers: false
-
-    config :mercato, Mercato.Subscriptions.Scheduler,
-      enabled: false
     # END MERCATO
     """
 
@@ -278,11 +281,25 @@ defmodule Mix.Tasks.Mercato.Install do
   defp upsert_api_routes!(router_contents, force?) do
     api_block = """
     # BEGIN MERCATO_API
-    scope "/mercato", alias: Mercato, as: false do
-      mercato_basic_routes(controllers: Controllers)
-      get "/referrals/validate/:code", ReferralController, :validate
-      get "/referrals/stats/:code", ReferralController, :stats
+    scope "/mercato", as: false do
+      mercato_public_routes()
     end
+
+    # Mount authenticated Mercato routes only inside a pipeline that sets
+    # `conn.assigns[:current_user]`.
+    #
+    # scope "/mercato", as: false do
+    #   pipe_through [:api, :require_authenticated_user]
+    #   mercato_customer_routes()
+    # end
+    #
+    # Mount admin Mercato routes only inside a pipeline that authorizes admin access
+    # and sets `conn.assigns[:mercato_admin?]`.
+    #
+    # scope "/mercato/admin", as: false do
+    #   pipe_through [:api, :require_admin_user]
+    #   mercato_admin_routes()
+    # end
     # END MERCATO_API
     """
 
@@ -294,12 +311,26 @@ defmodule Mix.Tasks.Mercato.Install do
         # Fallback: append a self-contained API scope block near the bottom of the router module.
         fallback = """
         # BEGIN MERCATO_API
-        scope "/api/mercato", alias: Mercato, as: false do
+        scope "/api/mercato", as: false do
           pipe_through :api
-          mercato_basic_routes(controllers: Controllers)
-          get "/referrals/validate/:code", ReferralController, :validate
-          get "/referrals/stats/:code", ReferralController, :stats
+          mercato_public_routes()
         end
+
+        # Mount authenticated Mercato routes only inside a pipeline that sets
+        # `conn.assigns[:current_user]`.
+        #
+        # scope "/api/mercato", as: false do
+        #   pipe_through [:api, :require_authenticated_user]
+        #   mercato_customer_routes()
+        # end
+        #
+        # Mount admin Mercato routes only inside a pipeline that authorizes admin access
+        # and sets `conn.assigns[:mercato_admin?]`.
+        #
+        # scope "/api/mercato/admin", as: false do
+        #   pipe_through [:api, :require_admin_user]
+        #   mercato_admin_routes()
+        # end
         # END MERCATO_API
         """
 
@@ -310,20 +341,11 @@ defmodule Mix.Tasks.Mercato.Install do
   defp upsert_referral_routes!(router_contents, force?) do
     block = """
     # BEGIN MERCATO_REFERRAL
-    scope "/", alias: Mercato, as: false do
-      get "/r/:code", ReferralController, :redirect
-    end
+    mercato_referral_routes(api_prefix: "/api/mercato")
     # END MERCATO_REFERRAL
     """
 
-    case find_best_scope(router_contents, &browser_scope_path?/1, &scope_contains_browser_pipe_through?/1) do
-      {:ok, %{insert_before_end_line: insert_before_end_line, inner_indent: inner_indent}} ->
-        inject_block_at_line(router_contents, insert_before_end_line, indent_block(block, inner_indent))
-
-      :error ->
-        # Fallback: inject at module level near the bottom.
-        upsert_block_before_last_end(router_contents, "MERCATO_REFERRAL", indent_block(block, "  "), force?)
-    end
+    upsert_block_before_last_end(router_contents, "MERCATO_REFERRAL", indent_block(block, "  "), force?)
   end
 
   defp inject_block_at_line(contents, insert_before_end_line, indented_block) do
@@ -491,16 +513,8 @@ defmodule Mix.Tasks.Mercato.Install do
     String.starts_with?(path, "/api")
   end
 
-  defp browser_scope_path?(path) when is_binary(path) do
-    path == "/" or path == ""
-  end
-
   defp scope_contains_api_pipe_through?(body) do
     String.contains?(body, "pipe_through :api") or String.contains?(body, "pipe_through [:api")
-  end
-
-  defp scope_contains_browser_pipe_through?(body) do
-    String.contains?(body, "pipe_through :browser") or String.contains?(body, "pipe_through [:browser")
   end
 
   defp find_router_path! do

@@ -14,3 +14,9 @@ config :logger, level: :warning
 
 # Set environment for Mercato
 config :mercato, :env, :test
+
+config :mercato, Mercato.TestEndpoint,
+  url: [host: "example.com"],
+  secret_key_base: String.duplicate("a", 64),
+  server: false,
+  debug_errors: true

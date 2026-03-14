@@ -34,6 +34,7 @@ defmodule Mercato.Referrals do
   alias Mercato
   alias Mercato.Referrals.{ReferralCode, ReferralClick, Commission}
   alias Mercato.Orders.Order
+  alias Mercato.Telemetry
 
   ## Referral Code Management
 
@@ -60,12 +61,20 @@ defmodule Mercato.Referrals do
   def generate_referral_code(user_id, opts \\ %{}) do
     attrs =
       opts
-      |> Map.put(:user_id, user_id)
-      |> Map.put_new_lazy(:code, fn -> generate_unique_code() end)
+      |> put_attr(:user_id, user_id)
+      |> put_new_attr_lazy(:code, fn -> generate_unique_code() end)
 
     %ReferralCode{}
     |> ReferralCode.changeset(attrs)
     |> repo().insert()
+    |> case do
+      {:ok, referral_code} = result ->
+        Telemetry.execute([:referral, :code_generate, :stop], %{count: 1}, %{referral_code_id: referral_code.id, user_id: user_id})
+        result
+
+      error ->
+        error
+    end
   end
 
   @doc """
@@ -154,6 +163,22 @@ defmodule Mercato.Referrals do
   defp maybe_preload(query, nil), do: query
   defp maybe_preload(query, preloads), do: from(rc in query, preload: ^preloads)
 
+  defp put_attr(attrs, key, value) when is_map(attrs) do
+    if Enum.any?(Map.keys(attrs), &is_binary/1) do
+      Map.put(attrs, Atom.to_string(key), value)
+    else
+      Map.put(attrs, key, value)
+    end
+  end
+
+  defp put_new_attr_lazy(attrs, key, fun) when is_map(attrs) do
+    if Enum.any?(Map.keys(attrs), &is_binary/1) do
+      Map.put_new_lazy(attrs, Atom.to_string(key), fun)
+    else
+      Map.put_new_lazy(attrs, key, fun)
+    end
+  end
+
   ## Click Tracking
 
   @doc """
@@ -196,6 +221,7 @@ defmodule Mercato.Referrals do
           repo().rollback(:referral_code_not_found)
         end
 
+        Telemetry.execute([:referral, :click, :stop], %{count: 1}, %{referral_code_id: referral_code.id})
         click
       end)
     else

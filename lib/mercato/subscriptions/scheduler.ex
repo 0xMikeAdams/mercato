@@ -15,9 +15,8 @@ defmodule Mercato.Subscriptions.Scheduler do
 
   ## Usage
 
-  The scheduler is automatically started as part of the Mercato application
-  supervision tree. It will run continuously and process renewals based on
-  the configured interval.
+  The scheduler is optional. Host applications may add it to their own
+  supervision tree when they want an in-process renewal loop.
 
   ## Manual Processing
 
@@ -44,7 +43,7 @@ defmodule Mercato.Subscriptions.Scheduler do
   # Default configuration
   @default_interval :timer.hours(1)  # Check every hour
   @default_batch_size 100
-  @default_enabled true
+  @default_enabled false
 
   ## Client API
 
@@ -89,7 +88,6 @@ defmodule Mercato.Subscriptions.Scheduler do
 
   @impl true
   def init(opts) do
-    # Get configuration from opts or application config
     config = get_config(opts)
 
     state = %{
@@ -194,12 +192,10 @@ defmodule Mercato.Subscriptions.Scheduler do
   ## Private Functions
 
   defp get_config(opts) do
-    app_config = Application.get_env(:mercato, __MODULE__, [])
-
     [
-      interval: Keyword.get(opts, :interval, Keyword.get(app_config, :interval, @default_interval)),
-      batch_size: Keyword.get(opts, :batch_size, Keyword.get(app_config, :batch_size, @default_batch_size)),
-      enabled: Keyword.get(opts, :enabled, Keyword.get(app_config, :enabled, @default_enabled))
+      interval: Keyword.get(opts, :interval, @default_interval),
+      batch_size: Keyword.get(opts, :batch_size, @default_batch_size),
+      enabled: Keyword.get(opts, :enabled, @default_enabled)
     ]
   end
 
@@ -223,80 +219,44 @@ defmodule Mercato.Subscriptions.Scheduler do
       Logger.info("Subscription renewal processing skipped (repo not started)")
       {0, %{state.stats | last_run_processed: 0, last_run_successful: 0, last_run_failed: 0}}
     else
-    start_time = System.monotonic_time(:millisecond)
+      start_time = System.monotonic_time(:millisecond)
 
-    Logger.info("Starting subscription renewal processing")
+      Logger.info("Starting subscription renewal processing")
 
-    # Get subscriptions due for renewal
-    subscriptions = Subscriptions.get_subscriptions_due_for_renewal()
-    total_count = length(subscriptions)
+      summary =
+        case Subscriptions.process_due_renewals(batch_size: state.batch_size) do
+          {:ok, %{lock_acquired?: false}} ->
+            %{processed: 0, successful: 0, failed: 0}
 
-    Logger.info("Found #{total_count} subscriptions due for renewal")
+          {:ok, result} ->
+            result
 
-    # Process subscriptions in batches
-    {successful, failed} = process_subscriptions_in_batches(subscriptions, state.batch_size)
+          {:error, reason} ->
+            Logger.error("Subscription renewal processing failed: #{inspect(reason)}")
+            %{processed: 0, successful: 0, failed: 0}
+        end
 
-    end_time = System.monotonic_time(:millisecond)
-    duration = end_time - start_time
+      end_time = System.monotonic_time(:millisecond)
+      duration = end_time - start_time
 
-    Logger.info("""
-    Subscription renewal processing completed:
-    - Total processed: #{total_count}
-    - Successful: #{successful}
-    - Failed: #{failed}
-    - Duration: #{duration}ms
-    """)
+      Logger.info("""
+      Subscription renewal processing completed:
+      - Total processed: #{summary.processed}
+      - Successful: #{summary.successful}
+      - Failed: #{summary.failed}
+      - Duration: #{duration}ms
+      """)
 
-    # Update stats
-    new_stats = %{
-      total_processed: state.stats.total_processed + total_count,
-      total_successful: state.stats.total_successful + successful,
-      total_failed: state.stats.total_failed + failed,
-      last_run_processed: total_count,
-      last_run_successful: successful,
-      last_run_failed: failed
-    }
+      new_stats = %{
+        total_processed: state.stats.total_processed + summary.processed,
+        total_successful: state.stats.total_successful + summary.successful,
+        total_failed: state.stats.total_failed + summary.failed,
+        last_run_processed: summary.processed,
+        last_run_successful: summary.successful,
+        last_run_failed: summary.failed
+      }
 
-    {total_count, new_stats}
-    end
-  end
-
-  defp process_subscriptions_in_batches(subscriptions, batch_size) do
-    subscriptions
-    |> Enum.chunk_every(batch_size)
-    |> Enum.reduce({0, 0}, fn batch, {successful_acc, failed_acc} ->
-      {batch_successful, batch_failed} = process_subscription_batch(batch)
-      {successful_acc + batch_successful, failed_acc + batch_failed}
-    end)
-  end
-
-  defp process_subscription_batch(subscriptions) do
-    Enum.reduce(subscriptions, {0, 0}, fn subscription, {successful, failed} ->
-      case process_single_subscription(subscription) do
-        {:ok, _order} ->
-          {successful + 1, failed}
-
-        {:error, reason} ->
-          Logger.warning("Failed to process renewal for subscription #{subscription.id}: #{inspect(reason)}")
-          {successful, failed + 1}
-      end
-    end)
-  end
-
-  defp process_single_subscription(subscription) do
-    try do
-      case Subscriptions.process_renewal(subscription.id) do
-        {:ok, order} ->
-          Logger.debug("Successfully processed renewal for subscription #{subscription.id}, created order #{order.id}")
-          {:ok, order}
-
-        {:error, reason} ->
-          {:error, reason}
-      end
-    rescue
-      error ->
-        Logger.error("Exception processing renewal for subscription #{subscription.id}: #{inspect(error)}")
-        {:error, error}
+      {summary.processed, new_stats}
     end
   end
 

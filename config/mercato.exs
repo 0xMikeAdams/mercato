@@ -12,8 +12,8 @@ config :mercato, Mercato.Repo,
 
 config :mercato,
   ecto_repos: [Mercato.Repo],
-  # Payment gateway configuration
-  payment_gateway: Mercato.PaymentGateways.Dummy,
+  # Set this to your real payment gateway module before processing live payments.
+  payment_gateway: nil,
   # Shipping calculator configuration
   shipping_calculator: Mercato.ShippingCalculators.FlatRate,
   # Tax calculator configuration
@@ -50,3 +50,10 @@ config :mercato, Mercato.Repo,
   # url: database_url,
   pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
   ssl: true
+
+# Optional convenience scheduler
+#
+# Add this child in your host application's supervision tree if you want the
+# built-in renewal timer:
+#
+#   Mercato.Subscriptions.scheduler_child_spec(enabled: true, interval: :timer.hours(1))

@@ -6,7 +6,6 @@ defmodule Mercato.Application do
   - Optional Ecto repository (only if `config :mercato, :repo, Mercato.Repo`)
   - Optional Phoenix PubSub (only if `config :mercato, :pubsub, Mercato.PubSub`)
   - Cart Manager DynamicSupervisor for managing cart GenServers
-  - Subscription Scheduler for automated subscription renewals
   """
 
   use Application
@@ -25,10 +24,7 @@ defmodule Mercato.Application do
         {Registry, keys: :unique, name: Mercato.Cart.Manager.Registry},
 
         # DynamicSupervisor for Cart GenServers
-        Mercato.Cart.Manager.Supervisor,
-
-        # Subscription renewal scheduler
-        Mercato.Subscriptions.Scheduler
+        Mercato.Cart.Manager.Supervisor
       ])
 
     opts = [strategy: :one_for_one, name: Mercato.Supervisor]

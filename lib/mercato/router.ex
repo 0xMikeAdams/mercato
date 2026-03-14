@@ -17,17 +17,57 @@ defmodule Mercato.Router do
           plug :accepts, ["json"]
         end
 
+        pipeline :api_authenticated do
+          plug :accepts, ["json"]
+          plug :require_authenticated_user
+        end
+
+        pipeline :api_admin do
+          plug :accepts, ["json"]
+          plug :require_admin_user
+        end
+
         scope "/api/v1", MyAppWeb do
           pipe_through :api
-          mercato_api_routes()
+
+          scope "/mercato", as: false do
+            mercato_public_routes()
+          end
         end
+
+        scope "/api/v1", MyAppWeb do
+          pipe_through :api_authenticated
+
+          scope "/mercato", as: false do
+            mercato_customer_routes()
+          end
+        end
+
+        scope "/api/v1", MyAppWeb do
+          pipe_through :api_admin
+
+          scope "/mercato/admin", as: false do
+            mercato_admin_routes()
+          end
+        end
+
+        mercato_referral_routes(api_prefix: "/api/v1/mercato")
       end
 
-  This will mount all Mercato API routes under the `/api/v1` scope.
+  `mercato_api_routes/1` is available as a convenience macro, but production
+  integrations should generally prefer the trust-boundary-specific macros above.
 
   ## Available Routes
 
-  The `mercato_api_routes/0` macro defines the following routes:
+  The router helpers are split by trust boundary:
+
+  - `mercato_public_routes/1`
+  - `mercato_customer_routes/1`
+  - `mercato_admin_routes/1`
+  - `mercato_referral_routes/1`
+
+  `mercato_api_routes/1` remains as a convenience wrapper that mounts all
+  public, customer, and admin routes.
 
   ### Products
   - `GET /products` - List products
@@ -86,28 +126,18 @@ defmodule Mercato.Router do
   - `POST /referrals/generate` - Generate referral code (authenticated)
   - `GET /referrals/code` - Get user's referral code (authenticated)
 
-  ## Controller Modules
-
-  The routes expect the following controller modules to be defined
-  in the host application:
-
-  - `ProductController`
-  - `CategoryController`
-  - `TagController`
-  - `CartController`
-  - `OrderController`
-  - `CustomerController`
-  - `SubscriptionController`
-  - `ReferralController`
-
-  Each controller should implement the actions corresponding to the routes above.
+  By default, these helpers mount Mercato's built-in controllers. Host
+  applications may override the controller namespace via the `:controllers`
+  option.
   """
 
   @doc """
   Defines all Mercato API routes.
 
   This macro should be called within a Phoenix router scope to mount
-  all Mercato API endpoints.
+  all Mercato API endpoints. It is most useful for internal tools and
+  test routers; host applications should generally prefer the split
+  route macros.
 
   ## Options
 
@@ -122,69 +152,107 @@ defmodule Mercato.Router do
       mercato_api_routes(prefix: "/store")
   """
   defmacro mercato_api_routes(opts \\ []) do
+    public_opts = Keyword.put(opts, :include_orders?, true)
+    customer_opts = Keyword.put(opts, :include_orders?, true)
+
+    quote do
+      mercato_public_routes(unquote(public_opts))
+      mercato_customer_routes(unquote(customer_opts))
+      mercato_admin_routes(unquote(opts))
+    end
+  end
+
+  @doc """
+  Defines public storefront routes.
+  """
+  defmacro mercato_public_routes(opts \\ []) do
     prefix = Keyword.get(opts, :prefix, "")
+    controllers = Keyword.get(opts, :controllers)
+    include_orders? = Keyword.get(opts, :include_orders?, true)
+    route_opts = [alias: false]
+
+    product_controller = controller_ast(controllers, :ProductController, [:Mercato, :Controllers, :ProductController])
+    category_controller = controller_ast(controllers, :CategoryController, [:Mercato, :Controllers, :CategoryController])
+    tag_controller = controller_ast(controllers, :TagController, [:Mercato, :Controllers, :TagController])
+    cart_controller = controller_ast(controllers, :CartController, [:Mercato, :Controllers, :CartController])
+    order_controller = controller_ast(controllers, :OrderController, [:Mercato, :Controllers, :OrderController])
 
     quote do
       # Product routes
-      get "#{unquote(prefix)}/products", ProductController, :index
-      get "#{unquote(prefix)}/products/:id", ProductController, :show
-      post "#{unquote(prefix)}/products", ProductController, :create
-      put "#{unquote(prefix)}/products/:id", ProductController, :update
-      delete "#{unquote(prefix)}/products/:id", ProductController, :delete
+      get "#{unquote(prefix)}/products", unquote(product_controller), :index, unquote(route_opts)
+      get "#{unquote(prefix)}/products/:id", unquote(product_controller), :show, unquote(route_opts)
 
       # Product variant routes
-      get "#{unquote(prefix)}/products/:product_id/variants", ProductController, :list_variants
-      post "#{unquote(prefix)}/products/:product_id/variants", ProductController, :create_variant
+      get "#{unquote(prefix)}/products/:product_id/variants", unquote(product_controller), :list_variants, unquote(route_opts)
 
       # Category routes
-      get "#{unquote(prefix)}/categories", CategoryController, :index
-      get "#{unquote(prefix)}/categories/:id", CategoryController, :show
-      get "#{unquote(prefix)}/categories/:id/products", CategoryController, :products
+      get "#{unquote(prefix)}/categories", unquote(category_controller), :index, unquote(route_opts)
+      get "#{unquote(prefix)}/categories/:id", unquote(category_controller), :show, unquote(route_opts)
+      get "#{unquote(prefix)}/categories/:id/products", unquote(category_controller), :products, unquote(route_opts)
 
       # Tag routes
-      get "#{unquote(prefix)}/tags", TagController, :index
-      get "#{unquote(prefix)}/tags/:id/products", TagController, :products
+      get "#{unquote(prefix)}/tags", unquote(tag_controller), :index, unquote(route_opts)
+      get "#{unquote(prefix)}/tags/:id/products", unquote(tag_controller), :products, unquote(route_opts)
 
       # Cart routes
-      get "#{unquote(prefix)}/carts/:cart_token", CartController, :show
-      post "#{unquote(prefix)}/carts", CartController, :create
-      post "#{unquote(prefix)}/carts/:cart_token/items", CartController, :add_item
-      put "#{unquote(prefix)}/carts/:cart_token/items/:item_id", CartController, :update_item
-      delete "#{unquote(prefix)}/carts/:cart_token/items/:item_id", CartController, :remove_item
-      delete "#{unquote(prefix)}/carts/:cart_token", CartController, :clear
+      get "#{unquote(prefix)}/carts/:cart_token", unquote(cart_controller), :show, unquote(route_opts)
+      post "#{unquote(prefix)}/carts", unquote(cart_controller), :create, unquote(route_opts)
+      post "#{unquote(prefix)}/carts/:cart_token/items", unquote(cart_controller), :add_item, unquote(route_opts)
+      put "#{unquote(prefix)}/carts/:cart_token/items/:item_id", unquote(cart_controller), :update_item, unquote(route_opts)
+      delete "#{unquote(prefix)}/carts/:cart_token/items/:item_id", unquote(cart_controller), :remove_item, unquote(route_opts)
+      delete "#{unquote(prefix)}/carts/:cart_token", unquote(cart_controller), :clear, unquote(route_opts)
 
       # Cart coupon routes
-      post "#{unquote(prefix)}/carts/:cart_token/coupons", CartController, :apply_coupon
-      delete "#{unquote(prefix)}/carts/:cart_token/coupons", CartController, :remove_coupon
+      post "#{unquote(prefix)}/carts/:cart_token/coupons", unquote(cart_controller), :apply_coupon, unquote(route_opts)
+      delete "#{unquote(prefix)}/carts/:cart_token/coupons", unquote(cart_controller), :remove_coupon, unquote(route_opts)
 
-      # Order routes
-      get "#{unquote(prefix)}/orders", OrderController, :index
-      get "#{unquote(prefix)}/orders/:id", OrderController, :show
-      post "#{unquote(prefix)}/orders", OrderController, :create
-      put "#{unquote(prefix)}/orders/:id/status", OrderController, :update_status
-      post "#{unquote(prefix)}/orders/:id/cancel", OrderController, :cancel
-      post "#{unquote(prefix)}/orders/:id/refund", OrderController, :refund
+      if unquote(include_orders?) do
+        post "#{unquote(prefix)}/orders", unquote(order_controller), :create, unquote(route_opts)
+      end
+    end
+  end
+
+  @doc """
+  Defines authenticated customer routes.
+  """
+  defmacro mercato_customer_routes(opts \\ []) do
+    prefix = Keyword.get(opts, :prefix, "")
+    controllers = Keyword.get(opts, :controllers)
+    include_orders? = Keyword.get(opts, :include_orders?, true)
+    route_opts = [alias: false]
+
+    order_controller = controller_ast(controllers, :OrderController, [:Mercato, :Controllers, :OrderController])
+    customer_controller = controller_ast(controllers, :CustomerController, [:Mercato, :Controllers, :CustomerController])
+    subscription_controller = controller_ast(controllers, :SubscriptionController, [:Mercato, :Controllers, :SubscriptionController])
+    referral_controller = controller_ast(controllers, :ReferralController, [:Mercato, :ReferralController])
+
+    quote do
+      if unquote(include_orders?) do
+        get "#{unquote(prefix)}/orders", unquote(order_controller), :index, unquote(route_opts)
+        get "#{unquote(prefix)}/orders/:id", unquote(order_controller), :show, unquote(route_opts)
+        post "#{unquote(prefix)}/orders/:id/cancel", unquote(order_controller), :cancel, unquote(route_opts)
+      end
 
       # Customer routes
-      get "#{unquote(prefix)}/customers/profile", CustomerController, :show_profile
-      put "#{unquote(prefix)}/customers/profile", CustomerController, :update_profile
-      get "#{unquote(prefix)}/customers/addresses", CustomerController, :list_addresses
-      post "#{unquote(prefix)}/customers/addresses", CustomerController, :create_address
-      put "#{unquote(prefix)}/customers/addresses/:id", CustomerController, :update_address
-      delete "#{unquote(prefix)}/customers/addresses/:id", CustomerController, :delete_address
-      get "#{unquote(prefix)}/customers/orders", CustomerController, :order_history
+      get "#{unquote(prefix)}/customers/profile", unquote(customer_controller), :show_profile, unquote(route_opts)
+      put "#{unquote(prefix)}/customers/profile", unquote(customer_controller), :update_profile, unquote(route_opts)
+      get "#{unquote(prefix)}/customers/addresses", unquote(customer_controller), :list_addresses, unquote(route_opts)
+      post "#{unquote(prefix)}/customers/addresses", unquote(customer_controller), :create_address, unquote(route_opts)
+      put "#{unquote(prefix)}/customers/addresses/:id", unquote(customer_controller), :update_address, unquote(route_opts)
+      delete "#{unquote(prefix)}/customers/addresses/:id", unquote(customer_controller), :delete_address, unquote(route_opts)
+      get "#{unquote(prefix)}/customers/orders", unquote(customer_controller), :order_history, unquote(route_opts)
 
       # Subscription routes
-      get "#{unquote(prefix)}/subscriptions", SubscriptionController, :index
-      get "#{unquote(prefix)}/subscriptions/:id", SubscriptionController, :show
-      post "#{unquote(prefix)}/subscriptions/:id/pause", SubscriptionController, :pause
-      post "#{unquote(prefix)}/subscriptions/:id/resume", SubscriptionController, :resume
-      post "#{unquote(prefix)}/subscriptions/:id/cancel", SubscriptionController, :cancel
+      get "#{unquote(prefix)}/subscriptions", unquote(subscription_controller), :index, unquote(route_opts)
+      get "#{unquote(prefix)}/subscriptions/:id", unquote(subscription_controller), :show, unquote(route_opts)
+      post "#{unquote(prefix)}/subscriptions/:id/pause", unquote(subscription_controller), :pause, unquote(route_opts)
+      post "#{unquote(prefix)}/subscriptions/:id/resume", unquote(subscription_controller), :resume, unquote(route_opts)
+      post "#{unquote(prefix)}/subscriptions/:id/cancel", unquote(subscription_controller), :cancel, unquote(route_opts)
 
       # Referral routes
-      get "#{unquote(prefix)}/referrals/stats", ReferralController, :stats
-      post "#{unquote(prefix)}/referrals/generate", ReferralController, :generate_code
-      get "#{unquote(prefix)}/referrals/code", ReferralController, :get_code
+      get "#{unquote(prefix)}/referrals/stats", unquote(referral_controller), :stats, unquote(route_opts)
+      post "#{unquote(prefix)}/referrals/generate", unquote(referral_controller), :generate_code, unquote(route_opts)
+      get "#{unquote(prefix)}/referrals/code", unquote(referral_controller), :get_code, unquote(route_opts)
     end
   end
 
@@ -201,26 +269,27 @@ defmodule Mercato.Router do
   defmacro mercato_basic_routes(opts \\ []) do
     prefix = Keyword.get(opts, :prefix, "")
     controllers = Keyword.get(opts, :controllers)
+    route_opts = [alias: false]
 
-    product_controller = controller_ast(controllers, :ProductController)
-    cart_controller = controller_ast(controllers, :CartController)
-    order_controller = controller_ast(controllers, :OrderController)
+    product_controller = controller_ast(controllers, :ProductController, [:Mercato, :Controllers, :ProductController])
+    cart_controller = controller_ast(controllers, :CartController, [:Mercato, :Controllers, :CartController])
+    order_controller = controller_ast(controllers, :OrderController, [:Mercato, :Controllers, :OrderController])
 
     quote do
       # Basic product routes
-      get "#{unquote(prefix)}/products", unquote(product_controller), :index
-      get "#{unquote(prefix)}/products/:id", unquote(product_controller), :show
+      get "#{unquote(prefix)}/products", unquote(product_controller), :index, unquote(route_opts)
+      get "#{unquote(prefix)}/products/:id", unquote(product_controller), :show, unquote(route_opts)
 
       # Basic cart routes
-      get "#{unquote(prefix)}/carts/:cart_token", unquote(cart_controller), :show
-      post "#{unquote(prefix)}/carts", unquote(cart_controller), :create
-      post "#{unquote(prefix)}/carts/:cart_token/items", unquote(cart_controller), :add_item
-      put "#{unquote(prefix)}/carts/:cart_token/items/:item_id", unquote(cart_controller), :update_item
-      delete "#{unquote(prefix)}/carts/:cart_token/items/:item_id", unquote(cart_controller), :remove_item
+      get "#{unquote(prefix)}/carts/:cart_token", unquote(cart_controller), :show, unquote(route_opts)
+      post "#{unquote(prefix)}/carts", unquote(cart_controller), :create, unquote(route_opts)
+      post "#{unquote(prefix)}/carts/:cart_token/items", unquote(cart_controller), :add_item, unquote(route_opts)
+      put "#{unquote(prefix)}/carts/:cart_token/items/:item_id", unquote(cart_controller), :update_item, unquote(route_opts)
+      delete "#{unquote(prefix)}/carts/:cart_token/items/:item_id", unquote(cart_controller), :remove_item, unquote(route_opts)
 
       # Basic order routes
-      get "#{unquote(prefix)}/orders/:id", unquote(order_controller), :show
-      post "#{unquote(prefix)}/orders", unquote(order_controller), :create
+      get "#{unquote(prefix)}/orders/:id", unquote(order_controller), :show, unquote(route_opts)
+      post "#{unquote(prefix)}/orders", unquote(order_controller), :create, unquote(route_opts)
     end
   end
 
@@ -238,28 +307,22 @@ defmodule Mercato.Router do
   """
   defmacro mercato_admin_routes(opts \\ []) do
     prefix = Keyword.get(opts, :prefix, "")
+    controllers = Keyword.get(opts, :controllers)
+    route_opts = [alias: false]
+
+    product_controller = controller_ast(controllers, :ProductController, [:Mercato, :Controllers, :ProductController])
+    order_controller = controller_ast(controllers, :OrderController, [:Mercato, :Controllers, :OrderController])
 
     quote do
       # Admin product management
-      post "#{unquote(prefix)}/products", ProductController, :create
-      put "#{unquote(prefix)}/products/:id", ProductController, :update
-      delete "#{unquote(prefix)}/products/:id", ProductController, :delete
-      post "#{unquote(prefix)}/products/:product_id/variants", ProductController, :create_variant
+      post "#{unquote(prefix)}/products", unquote(product_controller), :create, unquote(route_opts)
+      put "#{unquote(prefix)}/products/:id", unquote(product_controller), :update, unquote(route_opts)
+      delete "#{unquote(prefix)}/products/:id", unquote(product_controller), :delete, unquote(route_opts)
+      post "#{unquote(prefix)}/products/:product_id/variants", unquote(product_controller), :create_variant, unquote(route_opts)
 
       # Admin order management
-      put "#{unquote(prefix)}/orders/:id/status", OrderController, :update_status
-      post "#{unquote(prefix)}/orders/:id/refund", OrderController, :refund
-
-      # Admin coupon management
-      get "#{unquote(prefix)}/coupons", CouponController, :index
-      get "#{unquote(prefix)}/coupons/:id", CouponController, :show
-      post "#{unquote(prefix)}/coupons", CouponController, :create
-      put "#{unquote(prefix)}/coupons/:id", CouponController, :update
-      delete "#{unquote(prefix)}/coupons/:id", CouponController, :delete
-
-      # Admin settings management
-      get "#{unquote(prefix)}/settings", SettingsController, :index
-      put "#{unquote(prefix)}/settings/:key", SettingsController, :update
+      put "#{unquote(prefix)}/orders/:id/status", unquote(order_controller), :update_status, unquote(route_opts)
+      post "#{unquote(prefix)}/orders/:id/refund", unquote(order_controller), :refund, unquote(route_opts)
     end
   end
 
@@ -281,26 +344,30 @@ defmodule Mercato.Router do
   """
   defmacro mercato_referral_routes(opts \\ []) do
     api_prefix = Keyword.get(opts, :api_prefix, "/api")
+    controllers = Keyword.get(opts, :controllers)
+    route_opts = [alias: false]
+    referral_controller = controller_ast(controllers, :ReferralController, [:Mercato, :ReferralController])
 
     quote do
       # Shortlink redirect (should be at root level)
-      get "/r/:code", Mercato.ReferralController, :redirect
+      get "/r/:code", unquote(referral_controller), :redirect, unquote(route_opts)
 
       # API routes for referral validation and stats
-      get "#{unquote(api_prefix)}/referrals/validate/:code", Mercato.ReferralController, :validate
-      get "#{unquote(api_prefix)}/referrals/stats/:code", Mercato.ReferralController, :stats
+      get "#{unquote(api_prefix)}/referrals/validate/:code", unquote(referral_controller), :validate, unquote(route_opts)
+      get "#{unquote(api_prefix)}/referrals/stats/:code", unquote(referral_controller), :stats, unquote(route_opts)
     end
   end
 
-  defp controller_ast(nil, name) when is_atom(name) do
-    {:__aliases__, [], [name]}
+  defp controller_ast(nil, _name, default_segments) when is_list(default_segments) do
+    Module.concat(default_segments)
   end
 
-  defp controller_ast({:__aliases__, meta, segments}, name) when is_list(segments) and is_atom(name) do
-    {:__aliases__, meta, segments ++ [name]}
+  defp controller_ast({:__aliases__, meta, segments}, name, _default_segments) when is_list(segments) and is_atom(name) do
+    _ = meta
+    Module.concat(segments ++ [name])
   end
 
-  defp controller_ast(base, name) when is_atom(name) do
+  defp controller_ast(base, name, _default_segments) when is_atom(name) do
     Module.concat(base, name)
   end
 end

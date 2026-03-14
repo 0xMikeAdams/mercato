@@ -47,6 +47,8 @@ defmodule Mercato.Orders do
   alias Mercato.Coupons
   alias Mercato.Events
   alias Mercato.Referrals
+  alias Mercato.Runtime
+  alias Mercato.Telemetry
 
   @doc """
   Gets an order by ID.
@@ -248,6 +250,7 @@ defmodule Mercato.Orders do
     case result do
       {:ok, %{preloaded_order: order}} ->
         Events.broadcast_order_created(order)
+        Telemetry.execute([:order, :create, :stop], %{count: 1}, %{order_id: order.id, user_id: order.user_id})
         {:ok, order}
 
       {:error, :order, %Ecto.Changeset{} = changeset, _changes}
@@ -414,29 +417,15 @@ defmodule Mercato.Orders do
       {:error, :payment_failed}
   """
   def process_payment(order, payment_details, opts \\ []) do
-    gateway = Keyword.get(opts, :payment_gateway) || get_payment_gateway()
     authorize_only = Keyword.get(opts, :authorize_only, false)
 
-    if gateway do
-      case gateway.authorize(order.grand_total, payment_details, opts) do
-        {:ok, transaction_id} ->
-          if authorize_only do
-            {:ok, %{transaction_id: transaction_id, status: "authorized"}}
-          else
-            case gateway.capture(transaction_id, order.grand_total, opts) do
-              {:ok, capture_details} ->
-                {:ok, Map.put(capture_details, :transaction_id, transaction_id)}
-
-              {:error, reason} ->
-                {:error, {:capture_failed, reason}}
-            end
-          end
-
-        {:error, reason} ->
-          {:error, {:authorization_failed, reason}}
+    with {:ok, gateway} <- Runtime.fetch_payment_gateway(opts),
+         {:ok, transaction_id} <- authorize_payment(gateway, order.grand_total, payment_details, opts) do
+      if authorize_only do
+        {:ok, %{transaction_id: transaction_id, status: "authorized"}}
+      else
+        capture_payment(gateway, transaction_id, order.grand_total, opts)
       end
-    else
-      {:error, :no_payment_gateway_configured}
     end
   end
 
@@ -452,12 +441,23 @@ defmodule Mercato.Orders do
       {:error, :no_payment_gateway_configured}
   """
   def process_refund(order, amount, opts \\ []) do
-    gateway = Keyword.get(opts, :payment_gateway) || get_payment_gateway()
+    with {:ok, gateway} <- Runtime.fetch_payment_gateway(opts),
+         transaction_id when is_binary(transaction_id) <- order.payment_transaction_id do
+      Telemetry.execute([:payment, :refund, :start], %{amount: amount}, %{order_id: order.id})
 
-    if gateway && order.payment_transaction_id do
-      gateway.refund(order.payment_transaction_id, amount, opts)
+      case gateway.refund(transaction_id, amount, opts) do
+        {:ok, refund_details} ->
+          Telemetry.execute([:payment, :refund, :stop], %{amount: amount}, %{order_id: order.id, refund_id: refund_details[:refund_id]})
+          {:ok, refund_details}
+
+        {:error, reason} ->
+          Telemetry.execute([:payment, :refund, :exception], %{amount: amount}, %{order_id: order.id, reason: reason})
+          {:error, {:refund_failed, reason}}
+      end
     else
-      {:error, :no_payment_gateway_configured}
+      {:error, :payment_gateway_not_configured} = error -> error
+      {:error, :dummy_payment_gateway_not_allowed} = error -> error
+      nil -> {:error, :missing_payment_transaction_id}
     end
   end
 
@@ -486,25 +486,12 @@ defmodule Mercato.Orders do
   end
 
   defp process_payment_for_cart(cart_data, payment_details, opts \\ []) do
-    gateway = Keyword.get(opts, :payment_gateway) || get_payment_gateway()
-
-    if gateway do
-      case gateway.authorize(cart_data.grand_total, payment_details, opts) do
-        {:ok, transaction_id} ->
-          case gateway.capture(transaction_id, cart_data.grand_total, opts) do
-            {:ok, capture_details} ->
-              {:ok, Map.put(capture_details, :transaction_id, transaction_id)}
-
-            {:error, reason} ->
-              {:error, {:capture_failed, reason}}
-          end
-
-        {:error, reason} ->
-          {:error, {:authorization_failed, reason}}
-      end
+    with {:ok, gateway} <- Runtime.fetch_payment_gateway(opts),
+         {:ok, transaction_id} <- authorize_payment(gateway, cart_data.grand_total, payment_details, opts) do
+      capture_payment(gateway, transaction_id, cart_data.grand_total, opts)
     else
-      # No payment gateway configured, proceed without payment
-      {:ok, nil}
+      {:error, :payment_gateway_not_configured} = error -> error
+      {:error, :dummy_payment_gateway_not_allowed} = error -> error
     end
   end
 
@@ -522,10 +509,6 @@ defmodule Mercato.Orders do
       %{transaction_id: transaction_id} -> transaction_id
       _ -> nil
     end
-  end
-
-  defp get_payment_gateway do
-    Application.get_env(:mercato, :payment_gateway)
   end
 
   defp generate_order_number do
@@ -549,20 +532,20 @@ defmodule Mercato.Orders do
 
     order_attrs =
       attrs
-      |> Map.put(:order_number, order_number)
-      |> Map.put(:source_cart_id, cart.id)
-      |> Map.put(:user_id, cart.user_id)
-      |> Map.put(:status, "pending")
-      |> Map.put(:subtotal, cart.subtotal)
-      |> Map.put(:discount_total, cart.discount_total)
-      |> Map.put(:shipping_total, cart.shipping_total)
-      |> Map.put(:tax_total, cart.tax_total)
-      |> Map.put(:grand_total, cart.grand_total)
-      |> Map.put(:applied_coupon_id, cart.applied_coupon_id)
-      |> Map.put(:referral_code_id, cart.referral_code_id)
-      |> Map.put(:shipping_address, shipping_address)
-      |> Map.put(:payment_transaction_id, get_attr(attrs, :payment_transaction_id))
-      |> Map.put(:idempotency_key, idempotency_key)
+      |> put_attr(:order_number, order_number)
+      |> put_attr(:source_cart_id, cart.id)
+      |> put_attr(:user_id, cart.user_id)
+      |> put_attr(:status, "pending")
+      |> put_attr(:subtotal, cart.subtotal)
+      |> put_attr(:discount_total, cart.discount_total)
+      |> put_attr(:shipping_total, cart.shipping_total)
+      |> put_attr(:tax_total, cart.tax_total)
+      |> put_attr(:grand_total, cart.grand_total)
+      |> put_attr(:applied_coupon_id, cart.applied_coupon_id)
+      |> put_attr(:referral_code_id, cart.referral_code_id)
+      |> put_attr(:shipping_address, shipping_address)
+      |> put_attr(:payment_transaction_id, get_attr(attrs, :payment_transaction_id))
+      |> put_attr(:idempotency_key, idempotency_key)
 
     %Order{}
     |> Order.create_changeset(order_attrs)
@@ -672,6 +655,14 @@ defmodule Mercato.Orders do
     |> normalize_idempotency_key()
   end
 
+  defp put_attr(attrs, key, value) when is_map(attrs) do
+    if Enum.any?(Map.keys(attrs), &is_binary/1) do
+      Map.put(attrs, Atom.to_string(key), value)
+    else
+      Map.put(attrs, key, value)
+    end
+  end
+
   defp normalize_idempotency_key(key) when is_binary(key) do
     case String.trim(key) do
       "" -> nil
@@ -709,6 +700,34 @@ defmodule Mercato.Orders do
       {:idempotency_key, {_message, opts}} -> opts[:constraint] == :unique
       _ -> false
     end)
+  end
+
+  defp authorize_payment(gateway, amount, payment_details, opts) do
+    Telemetry.execute([:payment, :authorize, :start], %{amount: amount}, %{})
+
+    case gateway.authorize(amount, payment_details, opts) do
+      {:ok, transaction_id} ->
+        Telemetry.execute([:payment, :authorize, :stop], %{amount: amount}, %{transaction_id: transaction_id})
+        {:ok, transaction_id}
+
+      {:error, reason} ->
+        Telemetry.execute([:payment, :authorize, :exception], %{amount: amount}, %{reason: reason})
+        {:error, {:authorization_failed, reason}}
+    end
+  end
+
+  defp capture_payment(gateway, transaction_id, amount, opts) do
+    Telemetry.execute([:payment, :capture, :start], %{amount: amount}, %{transaction_id: transaction_id})
+
+    case gateway.capture(transaction_id, amount, opts) do
+      {:ok, capture_details} ->
+        Telemetry.execute([:payment, :capture, :stop], %{amount: amount}, %{transaction_id: transaction_id})
+        {:ok, Map.put(capture_details, :transaction_id, transaction_id)}
+
+      {:error, reason} ->
+        Telemetry.execute([:payment, :capture, :exception], %{amount: amount}, %{transaction_id: transaction_id, reason: reason})
+        {:error, {:capture_failed, reason}}
+    end
   end
 
   defp create_status_history_entry(order_id, from_status, to_status, changed_by, notes) do

@@ -231,7 +231,7 @@ defmodule Mercato.Customers do
       {:error, %Ecto.Changeset{}}
   """
   def add_address(customer_id, attrs \\ %{}) do
-    attrs = Map.put(attrs, :customer_id, customer_id)
+    attrs = put_attr(attrs, :customer_id, customer_id)
 
     repo().transaction(fn ->
       # If this is being set as default, unset existing defaults of the same type
@@ -408,6 +408,14 @@ defmodule Mercato.Customers do
 
   defp maybe_preload(query, nil), do: query
   defp maybe_preload(query, preloads), do: from(q in query, preload: ^preloads)
+
+  defp put_attr(attrs, key, value) when is_map(attrs) do
+    if Enum.any?(Map.keys(attrs), &is_binary/1) do
+      Map.put(attrs, Atom.to_string(key), value)
+    else
+      Map.put(attrs, key, value)
+    end
+  end
 
   defp maybe_limit(query, nil), do: query
   defp maybe_limit(query, limit), do: from(q in query, limit: ^limit)

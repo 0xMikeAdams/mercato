@@ -2,20 +2,26 @@ defmodule Mercato.Controllers.OrderController do
   @moduledoc false
 
   use Phoenix.Controller, formats: [:json], namespace: false
+  import Mercato.Controllers.Helpers
 
   alias Mercato.Cart
-  alias Mercato.Controllers.Serializer
   alias Mercato.Orders
 
-  def show(conn, %{"id" => id}) do
-    case Orders.get_order(id) do
-      {:ok, order} ->
-        json(conn, %{data: Serializer.serialize(order)})
+  def index(conn, _params) do
+    with {:ok, user_id} <- current_user_id(conn) do
+      render_data(conn, Orders.list_orders(user_id: user_id))
+    else
+      {:error, :unauthorized} -> render_error(conn, :unauthorized, "unauthorized")
+    end
+  end
 
-      {:error, :not_found} ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "not_found"})
+  def show(conn, %{"id" => id}) do
+    with {:ok, user_id} <- current_user_id(conn),
+         {:ok, order} <- fetch_customer_order(id, user_id) do
+      render_data(conn, order)
+    else
+      {:error, :unauthorized} -> render_error(conn, :unauthorized, "unauthorized")
+      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
     end
   end
 
@@ -25,20 +31,57 @@ defmodule Mercato.Controllers.OrderController do
 
     with {:ok, cart_id} <- resolve_cart_id(cart_lookup),
          {:ok, order} <- Orders.create_order_from_cart(cart_id, order_attrs) do
-      conn
-      |> put_status(:created)
-      |> json(%{data: Serializer.serialize(order)})
+      render_data(conn, order, :created)
     else
       {:error, :not_found} ->
-        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+        render_error(conn, :not_found, "not_found")
 
       {:error, :empty_cart} ->
-        conn |> put_status(:unprocessable_entity) |> json(%{error: "empty_cart"})
+        render_error(conn, :unprocessable_entity, "empty_cart")
 
       {:error, reason} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: "unprocessable_entity", reason: inspect(reason)})
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+    end
+  end
+
+  def update_status(conn, %{"id" => id} = params) do
+    with :ok <- ensure_admin(conn),
+         {:ok, status} <- fetch_required(params, "status"),
+         {:ok, order} <- Orders.update_status(id, status, changed_by: admin_actor(conn), notes: Map.get(params, "notes")) do
+      render_data(conn, order)
+    else
+      {:error, :forbidden} -> render_error(conn, :forbidden, "forbidden")
+      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
+      {:error, %Ecto.Changeset{} = changeset} -> render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+    end
+  end
+
+  def cancel(conn, %{"id" => id} = params) do
+    with {:ok, user_id} <- current_user_id(conn),
+         {:ok, _order} <- fetch_customer_order(id, user_id),
+         {:ok, reason} <- fetch_required(params, "reason"),
+         {:ok, order} <- Orders.cancel_order(id, reason, changed_by: user_id) do
+      render_data(conn, order)
+    else
+      {:error, :unauthorized} -> render_error(conn, :unauthorized, "unauthorized")
+      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+    end
+  end
+
+  def refund(conn, %{"id" => id} = params) do
+    with :ok <- ensure_admin(conn),
+         {:ok, reason} <- fetch_required(params, "reason"),
+         {:ok, amount} <- parse_decimal(Map.get(params, "amount")),
+         {:ok, order} <- Orders.refund_order(id, amount, reason, changed_by: admin_actor(conn)) do
+      render_data(conn, order)
+    else
+      {:error, :forbidden} -> render_error(conn, :forbidden, "forbidden")
+      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
+      {:error, :missing_decimal} -> render_error(conn, :unprocessable_entity, "validation_error", %{reason: "missing amount"})
+      {:error, :invalid_decimal} -> render_error(conn, :unprocessable_entity, "validation_error", %{reason: "invalid amount"})
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
     end
   end
 
@@ -87,4 +130,21 @@ defmodule Mercato.Controllers.OrderController do
   end
 
   defp normalize_idempotency_key(_value), do: nil
+
+  defp fetch_customer_order(order_id, user_id) do
+    case Orders.get_order(order_id) do
+      {:ok, %{user_id: ^user_id} = order} -> {:ok, order}
+      {:ok, _order} -> {:error, :not_found}
+      {:error, :not_found} -> {:error, :not_found}
+    end
+  end
+
+  defp admin_actor(conn) do
+    case conn.assigns[:current_user] do
+      %{id: id} -> id
+      %{"id" => id} -> id
+      id when is_binary(id) -> id
+      _ -> nil
+    end
+  end
 end

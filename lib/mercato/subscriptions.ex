@@ -46,6 +46,9 @@ defmodule Mercato.Subscriptions do
   alias Mercato.Subscriptions.{Subscription, SubscriptionCycle}
   alias Mercato.Orders
   alias Mercato.Events
+  alias Mercato.Telemetry
+
+  @renewal_lock_key 84_241
 
   @doc """
   Gets a subscription by ID.
@@ -363,9 +366,11 @@ defmodule Mercato.Subscriptions do
         {:ok, %{order: order, updated_subscription: updated_subscription}} ->
           Events.broadcast_order_created(order)
           Events.broadcast_subscription_renewed(updated_subscription, order)
+          Telemetry.execute([:subscription, :renewal, :stop], %{count: 1}, %{subscription_id: subscription.id, order_id: order.id})
           {:ok, order}
 
         {:error, _step, reason, _changes} ->
+          Telemetry.execute([:subscription, :renewal, :exception], %{count: 1}, %{subscription_id: subscription.id, reason: reason})
           {:error, reason}
       end
     else
@@ -395,6 +400,47 @@ defmodule Mercato.Subscriptions do
     )
     |> repo().all()
     |> repo().preload(:cycles)
+  end
+
+  @doc """
+  Processes all subscriptions due for renewal behind an advisory lock.
+  """
+  def process_due_renewals(opts \\ []) do
+    date = Keyword.get(opts, :date, Date.utc_today())
+    batch_size = Keyword.get(opts, :batch_size, 100)
+
+    with_advisory_lock(fn ->
+      subscriptions =
+        date
+        |> get_subscriptions_due_for_renewal()
+        |> Enum.take(batch_size)
+
+      {successful, failed} =
+        Enum.reduce(subscriptions, {0, 0}, fn subscription, {successful, failed} ->
+          case process_renewal(subscription.id) do
+            {:ok, _order} -> {successful + 1, failed}
+            {:error, _reason} -> {successful, failed + 1}
+          end
+        end)
+
+      summary = %{
+        lock_acquired?: true,
+        processed: length(subscriptions),
+        successful: successful,
+        failed: failed,
+        date: date
+      }
+
+      Telemetry.execute([:subscription, :renewal_run, :stop], %{processed: summary.processed}, summary)
+      {:ok, summary}
+    end)
+  end
+
+  @doc """
+  Returns a child spec for the optional subscription scheduler.
+  """
+  def scheduler_child_spec(opts \\ []) do
+    Supervisor.child_spec({Mercato.Subscriptions.Scheduler, opts}, id: Mercato.Subscriptions.Scheduler)
   end
 
   # Private Functions
@@ -517,6 +563,23 @@ defmodule Mercato.Subscriptions do
     subscription
     |> Subscription.billing_changeset(%{next_billing_date: next_billing_date})
     |> repo().update()
+  end
+
+  defp with_advisory_lock(fun) when is_function(fun, 0) do
+    case repo().query("SELECT pg_try_advisory_lock($1)", [@renewal_lock_key]) do
+      {:ok, %{rows: [[true]]}} ->
+        try do
+          fun.()
+        after
+          _ = repo().query("SELECT pg_advisory_unlock($1)", [@renewal_lock_key])
+        end
+
+      {:ok, %{rows: [[false]]}} ->
+        {:ok, %{lock_acquired?: false, processed: 0, successful: 0, failed: 0}}
+
+      {:error, reason} ->
+        {:error, {:lock_failed, reason}}
+    end
   end
 
   defp repo, do: Mercato.repo()

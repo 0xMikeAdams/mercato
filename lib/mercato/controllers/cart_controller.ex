@@ -2,19 +2,17 @@ defmodule Mercato.Controllers.CartController do
   @moduledoc false
 
   use Phoenix.Controller, formats: [:json], namespace: false
+  import Mercato.Controllers.Helpers
 
   alias Mercato.Cart
-  alias Mercato.Controllers.Serializer
 
   def show(conn, %{"cart_token" => cart_token}) do
     case Cart.get_cart_by_token(cart_token) do
       {:ok, cart} ->
-        json(conn, %{data: Serializer.serialize(cart)})
+        render_data(conn, cart)
 
       {:error, :not_found} ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "not_found"})
+        render_error(conn, :not_found, "not_found")
     end
   end
 
@@ -24,17 +22,10 @@ defmodule Mercato.Controllers.CartController do
 
     case Cart.create_cart(%{cart_token: cart_token, user_id: user_id}) do
       {:ok, cart} ->
-        conn
-        |> put_status(:created)
-        |> json(%{data: Serializer.serialize(cart)})
+        render_data(conn, cart, :created)
 
       {:error, changeset} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{
-          error: "validation_error",
-          details: Serializer.serialize(changeset_errors(changeset))
-        })
+        render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
     end
   end
 
@@ -45,15 +36,13 @@ defmodule Mercato.Controllers.CartController do
          :ok <- validate_positive_quantity(quantity),
          {:ok, cart} <-
            Cart.add_item(cart.id, product_id, quantity, variant_id: params["variant_id"]) do
-      json(conn, %{data: Serializer.serialize(cart)})
+      render_data(conn, cart)
     else
       {:error, :not_found} ->
-        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+        render_error(conn, :not_found, "not_found")
 
       {:error, reason} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: "unprocessable_entity", reason: inspect(reason)})
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
     end
   end
 
@@ -62,30 +51,57 @@ defmodule Mercato.Controllers.CartController do
          {:ok, quantity} <- parse_int(params["quantity"], nil),
          :ok <- validate_positive_quantity(quantity),
          {:ok, cart} <- Cart.update_item_quantity(cart.id, item_id, quantity) do
-      json(conn, %{data: Serializer.serialize(cart)})
+      render_data(conn, cart)
     else
       {:error, :not_found} ->
-        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+        render_error(conn, :not_found, "not_found")
 
       {:error, reason} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: "unprocessable_entity", reason: inspect(reason)})
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
     end
   end
 
   def remove_item(conn, %{"cart_token" => cart_token, "item_id" => item_id}) do
     with {:ok, cart} <- Cart.get_cart_by_token(cart_token),
          {:ok, cart} <- Cart.remove_item(cart.id, item_id) do
-      json(conn, %{data: Serializer.serialize(cart)})
+      render_data(conn, cart)
     else
       {:error, :not_found} ->
-        conn |> put_status(:not_found) |> json(%{error: "not_found"})
+        render_error(conn, :not_found, "not_found")
 
       {:error, reason} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: "unprocessable_entity", reason: inspect(reason)})
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+    end
+  end
+
+  def clear(conn, %{"cart_token" => cart_token}) do
+    with {:ok, cart} <- Cart.get_cart_by_token(cart_token),
+         {:ok, cart} <- Cart.clear_cart(cart.id) do
+      render_data(conn, cart)
+    else
+      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+    end
+  end
+
+  def apply_coupon(conn, %{"cart_token" => cart_token} = params) do
+    with {:ok, cart} <- Cart.get_cart_by_token(cart_token),
+         {:ok, coupon_code} <- fetch_required(params, "coupon_code"),
+         {:ok, cart} <- Cart.apply_coupon(cart.id, coupon_code) do
+      render_data(conn, cart)
+    else
+      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+    end
+  end
+
+  def remove_coupon(conn, %{"cart_token" => cart_token}) do
+    with {:ok, cart} <- Cart.get_cart_by_token(cart_token),
+         {:ok, cart} <- Cart.remove_coupon(cart.id) do
+      render_data(conn, cart)
+    else
+      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
     end
   end
 
@@ -111,19 +127,5 @@ defmodule Mercato.Controllers.CartController do
   defp validate_positive_quantity(quantity) when is_integer(quantity) and quantity > 0, do: :ok
   defp validate_positive_quantity(_quantity), do: {:error, :invalid_quantity}
 
-  defp fetch_param(params, key) do
-    case Map.get(params, key) do
-      nil -> {:error, {:missing, key}}
-      "" -> {:error, {:missing, key}}
-      value -> {:ok, value}
-    end
-  end
-
-  defp changeset_errors(changeset) do
-    Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
-      Enum.reduce(opts, msg, fn {k, v}, acc ->
-        String.replace(acc, "%{#{k}}", to_string(v))
-      end)
-    end)
-  end
+  defp fetch_param(params, key), do: fetch_required(params, key)
 end

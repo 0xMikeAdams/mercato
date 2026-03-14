@@ -168,6 +168,29 @@ defmodule Mercato.SubscriptionsTest do
       assert length(due_subscriptions) == 1
       assert hd(due_subscriptions).id == subscription.id
     end
+
+    test "process_due_renewals/1 processes due subscriptions behind an advisory lock", %{
+      product: product
+    } do
+      {:ok, subscription} = Subscriptions.create_subscription(valid_attrs(product.id))
+
+      {:ok, _updated_subscription} =
+        subscription
+        |> Subscription.billing_changeset(%{next_billing_date: Date.add(Date.utc_today(), -1)})
+        |> Repo.update()
+
+      assert {:ok, %{lock_acquired?: true, processed: 1, successful: 1, failed: 0}} =
+               Subscriptions.process_due_renewals()
+    end
+
+    test "scheduler_child_spec/1 returns an explicit optional scheduler child spec" do
+      child_spec = Subscriptions.scheduler_child_spec(enabled: true, interval: 30_000)
+
+      assert child_spec.id == Mercato.Subscriptions.Scheduler
+
+      assert child_spec.start ==
+               {Mercato.Subscriptions.Scheduler, :start_link, [[enabled: true, interval: 30_000]]}
+    end
   end
 
   describe "subscription cycles" do

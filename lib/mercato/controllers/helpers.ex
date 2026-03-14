@@ -1,0 +1,103 @@
+defmodule Mercato.Controllers.Helpers do
+  @moduledoc false
+
+  import Phoenix.Controller
+  import Plug.Conn, only: [put_status: 2]
+
+  alias Mercato.Controllers.Serializer
+
+  def render_data(conn, data, status \\ :ok) do
+    conn
+    |> put_status(status)
+    |> json(%{data: Serializer.serialize(data)})
+  end
+
+  def render_error(conn, status, error, extra \\ %{}) do
+    body =
+      extra
+      |> Map.new()
+      |> Map.put(:error, error)
+      |> Serializer.serialize()
+
+    conn
+    |> put_status(status)
+    |> json(body)
+  end
+
+  def current_user(conn) do
+    case conn.assigns[:current_user] do
+      nil -> {:error, :unauthorized}
+      user -> {:ok, user}
+    end
+  end
+
+  def current_user_id(conn) do
+    with {:ok, user} <- current_user(conn) do
+      case user_id(user) do
+        nil -> {:error, :unauthorized}
+        user_id -> {:ok, user_id}
+      end
+    end
+  end
+
+  def admin_authorized?(conn), do: !!conn.assigns[:mercato_admin?]
+
+  def ensure_admin(conn) do
+    if admin_authorized?(conn) do
+      :ok
+    else
+      {:error, :forbidden}
+    end
+  end
+
+  def changeset_errors(changeset) do
+    Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->
+      Enum.reduce(opts, msg, fn {key, value}, acc ->
+        String.replace(acc, "%{#{key}}", to_string(value))
+      end)
+    end)
+  end
+
+  def maybe_put(opts, _key, nil), do: opts
+  def maybe_put(opts, _key, ""), do: opts
+  def maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
+
+  def parse_integer(nil), do: {:error, :missing_integer}
+  def parse_integer(""), do: {:error, :missing_integer}
+  def parse_integer(value) when is_integer(value), do: {:ok, value}
+
+  def parse_integer(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {integer, ""} -> {:ok, integer}
+      _ -> {:error, :invalid_integer}
+    end
+  end
+
+  def parse_decimal(nil), do: {:error, :missing_decimal}
+  def parse_decimal(""), do: {:error, :missing_decimal}
+  def parse_decimal(%Decimal{} = value), do: {:ok, value}
+
+  def parse_decimal(value) when is_binary(value) do
+    try do
+      {:ok, Decimal.new(value)}
+    rescue
+      _error -> {:error, :invalid_decimal}
+    end
+  end
+
+  def parse_decimal(value) when is_integer(value), do: {:ok, Decimal.new(value)}
+  def parse_decimal(value) when is_float(value), do: {:ok, Decimal.from_float(value)}
+
+  def fetch_required(params, key) do
+    case Map.get(params, key) do
+      nil -> {:error, {:missing, key}}
+      "" -> {:error, {:missing, key}}
+      value -> {:ok, value}
+    end
+  end
+
+  defp user_id(%{id: id}), do: id
+  defp user_id(%{"id" => id}), do: id
+  defp user_id(id) when is_binary(id), do: id
+  defp user_id(_user), do: nil
+end

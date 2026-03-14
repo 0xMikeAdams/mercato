@@ -1,12 +1,12 @@
 defmodule Mercato do
   @moduledoc """
-  Mercato is a production-ready, open-source e-commerce engine for Elixir/Phoenix applications.
+  Mercato is an embedded e-commerce engine for Elixir/Phoenix applications.
 
   ## Overview
 
-  Mercato provides comprehensive WooCommerce-level functionality built idiomatically with Elixir,
-  Ecto, and Phoenix. It features real-time capabilities through Phoenix PubSub and an extensible
-  architecture through Elixir behaviours.
+  Mercato provides a reusable commerce domain layer built idiomatically with Elixir,
+  Ecto, and Phoenix. Host applications own authentication, authorization, health checks,
+  payment provider selection, and deployment wiring.
 
   ## Key Features
 
@@ -37,16 +37,12 @@ defmodule Mercato do
 
   ## Configuration
 
-  Configure Mercato in your `config/config.exs`:
-
-      config :mercato, Mercato.Repo,
-        database: "mercato_dev",
-        username: "postgres",
-        password: "postgres",
-        hostname: "localhost"
+  Configure Mercato with your host application's repo and pubsub:
 
       config :mercato,
-        ecto_repos: [Mercato.Repo]
+        repo: MyApp.Repo,
+        pubsub: MyApp.PubSub,
+        payment_gateway: MyApp.PaymentGateway
 
   ## Usage
 
@@ -95,7 +91,7 @@ defmodule Mercato do
   @doc """
   Returns the configured Ecto repo module used by Mercato.
 
-  Host applications can override this to use their own repo:
+  Host applications typically set this to their own repo:
 
       config :mercato, :repo, MyApp.Repo
   """

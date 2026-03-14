@@ -41,6 +41,7 @@ defmodule Mercato.Cart do
   alias Mercato.Cart.{Cart, CartItem, Calculator, Manager}
   alias Mercato.Catalog
   alias Mercato.Events
+  alias Mercato.Telemetry
 
   @doc """
   Gets a cart by ID.
@@ -152,6 +153,7 @@ defmodule Mercato.Cart do
           end
         end
 
+        Telemetry.execute([:cart, :create, :stop], %{count: 1}, %{cart_id: cart.id, user_id: cart.user_id})
         {:ok, repo().preload(cart, :items)}
 
       {:error, changeset} ->
@@ -216,6 +218,7 @@ defmodule Mercato.Cart do
         {:ok, _item} ->
           # Recalculate totals and broadcast event
           cart = recalculate_and_broadcast(cart_id)
+          Telemetry.execute([:cart, :item_add, :stop], %{count: quantity}, %{cart_id: cart.id, product_id: product_id})
           {:ok, cart}
 
         {:error, changeset} ->
@@ -249,6 +252,7 @@ defmodule Mercato.Cart do
       |> case do
         {:ok, _item} ->
           cart = recalculate_and_broadcast(cart_id)
+          Telemetry.execute([:cart, :item_update, :stop], %{count: quantity}, %{cart_id: cart.id, item_id: item.id})
           {:ok, cart}
 
         {:error, changeset} ->
@@ -280,6 +284,7 @@ defmodule Mercato.Cart do
 
       cart = recalculate_and_broadcast(cart_id)
       Events.broadcast_cart_item_removed(cart, item_id)
+      Telemetry.execute([:cart, :item_remove, :stop], %{count: 1}, %{cart_id: cart.id, item_id: item_id})
 
       {:ok, cart}
     end
@@ -316,6 +321,7 @@ defmodule Mercato.Cart do
         {:ok, updated_cart} ->
           updated_cart = repo().preload(updated_cart, :items, force: true)
           Events.broadcast_cart_cleared(cart_id)
+          Telemetry.execute([:cart, :clear, :stop], %{count: 1}, %{cart_id: cart_id})
           {:ok, updated_cart}
 
         {:error, changeset} ->
@@ -354,6 +360,7 @@ defmodule Mercato.Cart do
         {:ok, _updated_cart} ->
           # Recalculate totals with coupon applied
           cart = recalculate_and_broadcast(cart_id)
+          Telemetry.execute([:cart, :coupon_apply, :stop], %{count: 1}, %{cart_id: cart.id, coupon_id: coupon.id})
           {:ok, cart}
 
         {:error, changeset} ->

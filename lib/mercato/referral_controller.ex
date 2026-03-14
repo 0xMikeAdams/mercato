@@ -19,8 +19,10 @@ defmodule Mercato.ReferralController do
   """
 
   use Phoenix.Controller, formats: [:json], namespace: false
+  import Mercato.Controllers.Helpers
   import Phoenix.Controller, except: [redirect: 2]
 
+  alias Mercato.Controllers.Serializer
   alias Mercato.Events
   alias Mercato.Referrals
 
@@ -102,6 +104,39 @@ defmodule Mercato.ReferralController do
         conn
         |> put_status(:not_found)
         |> json(%{error: "Referral code not found"})
+    end
+  end
+
+  def stats(conn, _params) do
+    with {:ok, user_id} <- current_user_id(conn) do
+      json(conn, %{data: Serializer.serialize(Referrals.get_referral_stats(user_id))})
+    else
+      {:error, :unauthorized} -> render_error(conn, :unauthorized, "unauthorized")
+    end
+  end
+
+  def generate_code(conn, %{"referral_code" => attrs}), do: generate_code(conn, attrs)
+
+  def generate_code(conn, attrs) when is_map(attrs) do
+    with {:ok, user_id} <- current_user_id(conn),
+         {:ok, referral_code} <- Referrals.generate_referral_code(user_id, attrs) do
+      render_data(conn, referral_code, :created)
+    else
+      {:error, :unauthorized} ->
+        render_error(conn, :unauthorized, "unauthorized")
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+    end
+  end
+
+  def get_code(conn, _params) do
+    with {:ok, user_id} <- current_user_id(conn),
+         {:ok, referral_code} <- Referrals.get_referral_code_by_user(user_id) do
+      render_data(conn, referral_code)
+    else
+      {:error, :unauthorized} -> render_error(conn, :unauthorized, "unauthorized")
+      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
     end
   end
 

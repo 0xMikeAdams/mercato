@@ -3,7 +3,7 @@
 <!-- [![Hex.pm](https://img.shields.io/hexpm/v/mercato.svg)](https://hex.pm/packages/mercato)
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/mercato) -->
 
-A production-ready, open-source e-commerce engine for Elixir/Phoenix applications. Mercato provides comprehensive functionality built idiomatically with Elixir, Ecto, and Phoenix, featuring real-time capabilities and extensible architecture.
+An embedded e-commerce engine for Elixir/Phoenix applications. Mercato provides product, cart, order, customer, subscription, and referral primitives with Phoenix-friendly route macros, Ecto contexts, and extension points for payment, shipping, and tax integrations.
 
 ## Features
 
@@ -39,7 +39,7 @@ mix mercato.install
 The installation command will:
 - Copy necessary migrations to your application
 - Create/update `config/mercato.exs` and import it from `config/config.exs`
-- Inject a minimal API and referral routes into your Phoenix router
+- Inject safe public-route scaffolding plus commented customer/admin examples into your Phoenix router
 
 
 Run Migrations:
@@ -50,16 +50,76 @@ mix ecto.migrate
 
 Verify Configuration:
 
-The installer creates `config/mercato.exs` and sets:
+The installer creates `config/mercato.exs` with safe defaults:
 
 ```elixir
 config :mercato,
   repo: MyApp.Repo,
   pubsub: MyApp.PubSub,
-  payment_gateway: Mercato.PaymentGateways.Dummy,
+  payment_gateway: nil,
   shipping_calculator: Mercato.ShippingCalculators.FlatRate,
   tax_calculator: Mercato.TaxCalculators.Simple
 ```
+
+Set `payment_gateway` to a real implementation before enabling live payment processing.
+
+## Phoenix Integration
+
+Mount Mercato routes by trust boundary and keep authentication in your host app pipelines:
+
+```elixir
+defmodule MyAppWeb.Router do
+  use MyAppWeb, :router
+  import Mercato.Router
+
+  pipeline :api do
+    plug :accepts, ["json"]
+  end
+
+  pipeline :api_authenticated do
+    plug :accepts, ["json"]
+    plug :require_authenticated_user
+  end
+
+  pipeline :api_admin do
+    plug :accepts, ["json"]
+    plug :require_admin_user
+  end
+
+  scope "/api", MyAppWeb do
+    pipe_through :api
+
+    scope "/mercato", as: false do
+      mercato_public_routes()
+    end
+  end
+
+  scope "/api", MyAppWeb do
+    pipe_through :api_authenticated
+
+    scope "/mercato", as: false do
+      mercato_customer_routes()
+    end
+  end
+
+  scope "/api", MyAppWeb do
+    pipe_through :api_admin
+
+    scope "/mercato/admin", as: false do
+      mercato_admin_routes()
+    end
+  end
+
+  mercato_referral_routes(api_prefix: "/api/mercato")
+end
+```
+
+Mercato expects:
+
+- customer routes to receive `conn.assigns[:current_user]`
+- admin routes to receive `conn.assigns[:mercato_admin?] == true`
+
+See `docs/production_integration.md` for the full production checklist.
 
 ## Getting Started
 
@@ -102,9 +162,12 @@ config :mercato,
     postal_code: "12345",
     country: "US"
   },
-  payment_method: "stripe"
+  payment_method: "invoice",
+  idempotency_key: "checkout-123"
 })
 ```
+
+For HTTP checkout retries, send the `Idempotency-Key` header on `POST /orders`.
 
 ### LiveView Integration
 
