@@ -9,6 +9,7 @@ An embedded e-commerce engine for Elixir/Phoenix applications. Mercato provides 
 
 - **Product Catalog**: Simple, variable, downloadable, virtual, and subscription products
 - **Shopping Cart**: Anonymous and authenticated carts with real-time updates
+- **Programmatic Checkout**: Agent-ready cart pricing, checkout handoffs, and payment-session abstractions
 - **Order Management**: Complete order lifecycle with status tracking and audit trails
 - **Customer Management**: Guest checkout and registered user support
 - **Promotions**: Flexible coupon system with multiple discount types
@@ -57,6 +58,8 @@ config :mercato,
   repo: MyApp.Repo,
   pubsub: MyApp.PubSub,
   payment_gateway: nil,
+  checkout_provider: Mercato.Checkout.Providers.DefaultCheckoutProvider,
+  payment_provider: Mercato.Checkout.Providers.LegacyPaymentProvider,
   shipping_calculator: Mercato.ShippingCalculators.FlatRate,
   tax_calculator: Mercato.TaxCalculators.Simple
 ```
@@ -168,6 +171,116 @@ See `docs/production_integration.md` for the full production checklist.
 ```
 
 For HTTP checkout retries, send the `Idempotency-Key` header on `POST /orders`.
+
+### Programmatic Checkout
+
+Use `Mercato.Checkout` when a backend service, workflow engine, or AI agent needs
+to drive the entire cart-to-checkout lifecycle through code alone.
+
+The public flow is:
+
+1. `create_cart/2`
+2. `update_cart_lines/3`
+3. `set_buyer_identity/3`
+4. `set_shipping_address/3`
+5. `price_checkout/3`
+6. `create_checkout_session/3`
+7. `create_payment_session/3` or `create_payment_intent/3`
+
+`price_checkout/3` always returns an explicit machine-readable totals object
+before any checkout handoff or payment session is created.
+
+```elixir
+alias Mercato.Checkout
+
+{:ok, cart} =
+  Checkout.create_cart(%{
+    cart_token: "agent-cart-123"
+  })
+
+{:ok, _cart} =
+  Checkout.update_cart_lines(cart.cart_id, [
+    %{action: "add", product_id: product.id, quantity: 2}
+  ])
+
+{:ok, _cart} =
+  Checkout.set_buyer_identity(cart.cart_id, %{
+    email: "buyer@example.com",
+    first_name: "Ada",
+    last_name: "Lovelace"
+  })
+
+{:ok, _cart} =
+  Checkout.set_shipping_address(
+    cart.cart_id,
+    %{
+      line1: "123 Market St",
+      city: "San Francisco",
+      state: "CA",
+      postal_code: "94105",
+      country: "US"
+    },
+    shipping_method: "standard"
+  )
+
+{:ok, quote} = Checkout.price_checkout(cart.cart_id)
+
+quote.price_breakdown.grand_total.amount
+#=> "74.97"
+
+{:ok, session} =
+  Checkout.create_checkout_session(cart.cart_id, %{
+    idempotency_key: "checkout-123",
+    session_kind: "managed"
+  })
+
+session.checkout_session.id
+session.checkout_session.status
+session.checkout_session.redirect_url
+```
+
+The returned `ProgrammaticCheckoutResponse` includes:
+
+- `status`
+- `cart_id` and `cart_token`
+- canonical `product_id` and `variant_id` values for every line item
+- `buyer_identity` and `shipping_address`
+- `price_breakdown.subtotal`
+- `price_breakdown.discount_total`
+- `price_breakdown.shipping_total`
+- `price_breakdown.tax_total`
+- `price_breakdown.duties_total`
+- `price_breakdown.grand_total`
+- `checkout_session.id`
+- `checkout_session.status`
+- `checkout_session.redirect_url`
+- `checkout_session.payment_client_secret`
+- `retry_safe`
+
+#### AI-Agent Usage
+
+The checkout API is designed so an agent can answer four questions without
+rendering browser UI:
+
+- what is being bought: inspect `line_items`
+- what is the exact final cost: inspect `price_breakdown`
+- where does the user go next: inspect `checkout_session.redirect_url` or `checkout_session.payment_client_secret`
+- can this be retried safely: inspect `retry_safe` and reuse `idempotency_key`
+
+```elixir
+{:ok, response} =
+  Checkout.create_payment_intent(cart_id, %{
+    idempotency_key: "agent-payment-123",
+    payment_flow: "payment_intent"
+  }, payment_provider: MyApp.StripePaymentProvider)
+
+%{
+  next_action: response.checkout_session.payment_client_secret,
+  total: response.price_breakdown.grand_total.amount,
+  currency: response.currency,
+  retry_safe: response.retry_safe
+}
+```
 
 ### LiveView Integration
 
@@ -364,6 +477,26 @@ def handle_info({:order_status_changed, order, old_status, new_status}, socket) 
   {:noreply, socket}
 end
 ```
+
+For programmatic checkout, prefer the new checkout-specific adapters:
+
+```elixir
+config :mercato,
+  checkout_provider: MyApp.RedirectCheckoutProvider,
+  payment_provider: MyApp.StripePaymentProvider
+```
+
+`checkout_provider` is responsible for redirect or managed checkout handoffs.
+`payment_provider` is responsible for payment-session or payment-intent creation.
+The default payment adapter wraps the existing `payment_gateway`, so browser-based
+order flows continue to work without changes.
+
+## Migration Notes
+
+- Run the new migration to add persisted checkout metadata on carts and explicit `duties_total` fields on carts/orders.
+- Existing `Mercato.Cart` and `Mercato.Orders` APIs remain backward-compatible.
+- Existing browser/API order creation flows continue to use `Mercato.Orders.create_order_from_cart/2`.
+- `Mercato.Checkout` is additive and can be adopted incrementally alongside the existing HTTP controllers.
 
 ## Testing
 

@@ -50,6 +50,7 @@ defmodule Mercato do
 
   - `Mercato.Catalog` - Product and inventory management
   - `Mercato.Cart` - Shopping cart operations
+  - `Mercato.Checkout` - Programmatic cart pricing and checkout orchestration
   - `Mercato.Orders` - Order creation and management
   - `Mercato.Customers` - Customer profiles and addresses
   - `Mercato.Coupons` - Discount code management

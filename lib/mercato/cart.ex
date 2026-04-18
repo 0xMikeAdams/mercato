@@ -40,6 +40,7 @@ defmodule Mercato.Cart do
   alias Mercato
   alias Mercato.Cart.{Cart, CartItem, Calculator, Manager}
   alias Mercato.Catalog
+  alias Mercato.Customers.Address
   alias Mercato.Events
   alias Mercato.Telemetry
 
@@ -153,7 +154,11 @@ defmodule Mercato.Cart do
           end
         end
 
-        Telemetry.execute([:cart, :create, :stop], %{count: 1}, %{cart_id: cart.id, user_id: cart.user_id})
+        Telemetry.execute([:cart, :create, :stop], %{count: 1}, %{
+          cart_id: cart.id,
+          user_id: cart.user_id
+        })
+
         {:ok, repo().preload(cart, :items)}
 
       {:error, changeset} ->
@@ -218,7 +223,12 @@ defmodule Mercato.Cart do
         {:ok, _item} ->
           # Recalculate totals and broadcast event
           cart = recalculate_and_broadcast(cart_id)
-          Telemetry.execute([:cart, :item_add, :stop], %{count: quantity}, %{cart_id: cart.id, product_id: product_id})
+
+          Telemetry.execute([:cart, :item_add, :stop], %{count: quantity}, %{
+            cart_id: cart.id,
+            product_id: product_id
+          })
+
           {:ok, cart}
 
         {:error, changeset} ->
@@ -252,7 +262,12 @@ defmodule Mercato.Cart do
       |> case do
         {:ok, _item} ->
           cart = recalculate_and_broadcast(cart_id)
-          Telemetry.execute([:cart, :item_update, :stop], %{count: quantity}, %{cart_id: cart.id, item_id: item.id})
+
+          Telemetry.execute([:cart, :item_update, :stop], %{count: quantity}, %{
+            cart_id: cart.id,
+            item_id: item.id
+          })
+
           {:ok, cart}
 
         {:error, changeset} ->
@@ -284,7 +299,11 @@ defmodule Mercato.Cart do
 
       cart = recalculate_and_broadcast(cart_id)
       Events.broadcast_cart_item_removed(cart, item_id)
-      Telemetry.execute([:cart, :item_remove, :stop], %{count: 1}, %{cart_id: cart.id, item_id: item_id})
+
+      Telemetry.execute([:cart, :item_remove, :stop], %{count: 1}, %{
+        cart_id: cart.id,
+        item_id: item_id
+      })
 
       {:ok, cart}
     end
@@ -314,6 +333,7 @@ defmodule Mercato.Cart do
         discount_total: Decimal.new("0.00"),
         shipping_total: Decimal.new("0.00"),
         tax_total: Decimal.new("0.00"),
+        duties_total: Decimal.new("0.00"),
         grand_total: Decimal.new("0.00")
       })
       |> repo().update()
@@ -360,7 +380,12 @@ defmodule Mercato.Cart do
         {:ok, _updated_cart} ->
           # Recalculate totals with coupon applied
           cart = recalculate_and_broadcast(cart_id)
-          Telemetry.execute([:cart, :coupon_apply, :stop], %{count: 1}, %{cart_id: cart.id, coupon_id: coupon.id})
+
+          Telemetry.execute([:cart, :coupon_apply, :stop], %{count: 1}, %{
+            cart_id: cart.id,
+            coupon_id: coupon.id
+          })
+
           {:ok, cart}
 
         {:error, changeset} ->
@@ -451,6 +476,33 @@ defmodule Mercato.Cart do
   end
 
   @doc """
+  Updates buyer/shipping checkout metadata stored on the cart.
+
+  When shipping details change, cart totals are recalculated using the stored
+  checkout destination and shipping method.
+  """
+  def update_checkout_context(cart_id, attrs) when is_map(attrs) do
+    with {:ok, cart} <- get_cart(cart_id) do
+      cart
+      |> Cart.checkout_context_changeset(attrs)
+      |> repo().update()
+      |> case do
+        {:ok, updated_cart} ->
+          updated_cart = repo().preload(updated_cart, [items: [:product, :variant]], force: true)
+
+          if checkout_pricing_changed?(attrs) do
+            recalculate_totals(updated_cart.id)
+          else
+            {:ok, updated_cart}
+          end
+
+        {:error, changeset} ->
+          {:error, changeset}
+      end
+    end
+  end
+
+  @doc """
   Recalculates cart totals.
 
   This function recalculates the subtotal, discount, shipping, tax, and grand total
@@ -478,8 +530,10 @@ defmodule Mercato.Cart do
   """
   def recalculate_totals(cart_id, opts \\ []) do
     with {:ok, cart} <- get_cart(cart_id) do
+      pricing_opts = merge_checkout_pricing_opts(cart, opts)
+
       # Use Calculator module to compute all totals
-      totals = Calculator.recalculate_totals(cart, opts)
+      totals = Calculator.recalculate_totals(cart, pricing_opts)
 
       # Update cart with new totals
       cart
@@ -492,7 +546,7 @@ defmodule Mercato.Cart do
             Manager.update_cart(cart_id, updated_cart)
           end
 
-          {:ok, repo().preload(updated_cart, :items, force: true)}
+          {:ok, repo().preload(updated_cart, [items: [:product, :variant]], force: true)}
 
         {:error, changeset} ->
           {:error, changeset}
@@ -636,6 +690,45 @@ defmodule Mercato.Cart do
     {:ok, cart} = recalculate_totals(cart_id)
     Events.broadcast_cart_updated(cart)
     cart
+  end
+
+  defp checkout_pricing_changed?(attrs) do
+    Map.has_key?(attrs, :shipping_address) or Map.has_key?(attrs, "shipping_address") or
+      Map.has_key?(attrs, :shipping_method) or Map.has_key?(attrs, "shipping_method")
+  end
+
+  defp merge_checkout_pricing_opts(cart, opts) do
+    destination =
+      Keyword.get_lazy(opts, :destination, fn ->
+        cart.shipping_address
+        |> map_to_address()
+      end)
+
+    method =
+      Keyword.get_lazy(opts, :method, fn ->
+        Keyword.get(opts, :shipping_method, cart.shipping_method)
+      end)
+
+    opts
+    |> Keyword.put_new(:destination, destination)
+    |> put_option_if_present(:method, method)
+  end
+
+  defp put_option_if_present(opts, _key, nil), do: opts
+  defp put_option_if_present(opts, key, value), do: Keyword.put(opts, key, value)
+
+  defp map_to_address(nil), do: nil
+  defp map_to_address(%Address{} = address), do: address
+
+  defp map_to_address(address) when is_map(address) do
+    %Address{
+      line1: Map.get(address, :line1) || Map.get(address, "line1"),
+      line2: Map.get(address, :line2) || Map.get(address, "line2"),
+      city: Map.get(address, :city) || Map.get(address, "city"),
+      state: Map.get(address, :state) || Map.get(address, "state"),
+      postal_code: Map.get(address, :postal_code) || Map.get(address, "postal_code"),
+      country: Map.get(address, :country) || Map.get(address, "country")
+    }
   end
 
   defp get_shipping_calculator do

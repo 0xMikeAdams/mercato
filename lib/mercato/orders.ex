@@ -250,7 +250,12 @@ defmodule Mercato.Orders do
     case result do
       {:ok, %{preloaded_order: order}} ->
         Events.broadcast_order_created(order)
-        Telemetry.execute([:order, :create, :stop], %{count: 1}, %{order_id: order.id, user_id: order.user_id})
+
+        Telemetry.execute([:order, :create, :stop], %{count: 1}, %{
+          order_id: order.id,
+          user_id: order.user_id
+        })
+
         {:ok, order}
 
       {:error, :order, %Ecto.Changeset{} = changeset, _changes}
@@ -420,7 +425,8 @@ defmodule Mercato.Orders do
     authorize_only = Keyword.get(opts, :authorize_only, false)
 
     with {:ok, gateway} <- Runtime.fetch_payment_gateway(opts),
-         {:ok, transaction_id} <- authorize_payment(gateway, order.grand_total, payment_details, opts) do
+         {:ok, transaction_id} <-
+           authorize_payment(gateway, order.grand_total, payment_details, opts) do
       if authorize_only do
         {:ok, %{transaction_id: transaction_id, status: "authorized"}}
       else
@@ -447,11 +453,19 @@ defmodule Mercato.Orders do
 
       case gateway.refund(transaction_id, amount, opts) do
         {:ok, refund_details} ->
-          Telemetry.execute([:payment, :refund, :stop], %{amount: amount}, %{order_id: order.id, refund_id: refund_details[:refund_id]})
+          Telemetry.execute([:payment, :refund, :stop], %{amount: amount}, %{
+            order_id: order.id,
+            refund_id: refund_details[:refund_id]
+          })
+
           {:ok, refund_details}
 
         {:error, reason} ->
-          Telemetry.execute([:payment, :refund, :exception], %{amount: amount}, %{order_id: order.id, reason: reason})
+          Telemetry.execute([:payment, :refund, :exception], %{amount: amount}, %{
+            order_id: order.id,
+            reason: reason
+          })
+
           {:error, {:refund_failed, reason}}
       end
     else
@@ -487,7 +501,8 @@ defmodule Mercato.Orders do
 
   defp process_payment_for_cart(cart_data, payment_details, opts \\ []) do
     with {:ok, gateway} <- Runtime.fetch_payment_gateway(opts),
-         {:ok, transaction_id} <- authorize_payment(gateway, cart_data.grand_total, payment_details, opts) do
+         {:ok, transaction_id} <-
+           authorize_payment(gateway, cart_data.grand_total, payment_details, opts) do
       capture_payment(gateway, transaction_id, cart_data.grand_total, opts)
     else
       {:error, :payment_gateway_not_configured} = error -> error
@@ -540,6 +555,7 @@ defmodule Mercato.Orders do
       |> put_attr(:discount_total, cart.discount_total)
       |> put_attr(:shipping_total, cart.shipping_total)
       |> put_attr(:tax_total, cart.tax_total)
+      |> put_attr(:duties_total, cart.duties_total)
       |> put_attr(:grand_total, cart.grand_total)
       |> put_attr(:applied_coupon_id, cart.applied_coupon_id)
       |> put_attr(:referral_code_id, cart.referral_code_id)
@@ -707,25 +723,38 @@ defmodule Mercato.Orders do
 
     case gateway.authorize(amount, payment_details, opts) do
       {:ok, transaction_id} ->
-        Telemetry.execute([:payment, :authorize, :stop], %{amount: amount}, %{transaction_id: transaction_id})
+        Telemetry.execute([:payment, :authorize, :stop], %{amount: amount}, %{
+          transaction_id: transaction_id
+        })
+
         {:ok, transaction_id}
 
       {:error, reason} ->
         Telemetry.execute([:payment, :authorize, :exception], %{amount: amount}, %{reason: reason})
+
         {:error, {:authorization_failed, reason}}
     end
   end
 
   defp capture_payment(gateway, transaction_id, amount, opts) do
-    Telemetry.execute([:payment, :capture, :start], %{amount: amount}, %{transaction_id: transaction_id})
+    Telemetry.execute([:payment, :capture, :start], %{amount: amount}, %{
+      transaction_id: transaction_id
+    })
 
     case gateway.capture(transaction_id, amount, opts) do
       {:ok, capture_details} ->
-        Telemetry.execute([:payment, :capture, :stop], %{amount: amount}, %{transaction_id: transaction_id})
+        Telemetry.execute([:payment, :capture, :stop], %{amount: amount}, %{
+          transaction_id: transaction_id
+        })
+
         {:ok, Map.put(capture_details, :transaction_id, transaction_id)}
 
       {:error, reason} ->
-        Telemetry.execute([:payment, :capture, :exception], %{amount: amount}, %{transaction_id: transaction_id, reason: reason})
+        Telemetry.execute([:payment, :capture, :exception], %{amount: amount}, %{
+          transaction_id: transaction_id,
+          reason: reason
+        })
+
         {:error, {:capture_failed, reason}}
     end
   end

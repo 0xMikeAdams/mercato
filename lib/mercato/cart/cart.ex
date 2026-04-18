@@ -28,19 +28,23 @@ defmodule Mercato.Cart.Cart do
   @foreign_key_type :binary_id
 
   schema "carts" do
-    field :cart_token, :string
-    field :user_id, :binary_id
-    field :status, :string, default: "active"
-    field :subtotal, :decimal, default: Decimal.new("0.00")
-    field :discount_total, :decimal, default: Decimal.new("0.00")
-    field :shipping_total, :decimal, default: Decimal.new("0.00")
-    field :tax_total, :decimal, default: Decimal.new("0.00")
-    field :grand_total, :decimal, default: Decimal.new("0.00")
-    field :expires_at, :utc_datetime
-    field :referral_code_id, :binary_id
+    field(:cart_token, :string)
+    field(:user_id, :binary_id)
+    field(:status, :string, default: "active")
+    field(:buyer_identity, :map)
+    field(:shipping_address, :map)
+    field(:shipping_method, :string)
+    field(:subtotal, :decimal, default: Decimal.new("0.00"))
+    field(:discount_total, :decimal, default: Decimal.new("0.00"))
+    field(:shipping_total, :decimal, default: Decimal.new("0.00"))
+    field(:tax_total, :decimal, default: Decimal.new("0.00"))
+    field(:duties_total, :decimal, default: Decimal.new("0.00"))
+    field(:grand_total, :decimal, default: Decimal.new("0.00"))
+    field(:expires_at, :utc_datetime)
+    field(:referral_code_id, :binary_id)
 
-    has_many :items, CartItem, foreign_key: :cart_id
-    belongs_to :applied_coupon, Mercato.Coupons.Coupon
+    has_many(:items, CartItem, foreign_key: :cart_id)
+    belongs_to(:applied_coupon, Mercato.Coupons.Coupon)
 
     timestamps(type: :utc_datetime)
   end
@@ -63,13 +67,36 @@ defmodule Mercato.Cart.Cart do
   """
   def totals_changeset(cart, attrs) do
     cart
-    |> cast(attrs, [:subtotal, :discount_total, :shipping_total, :tax_total, :grand_total])
-    |> validate_required([:subtotal, :discount_total, :shipping_total, :tax_total, :grand_total])
+    |> cast(attrs, [
+      :subtotal,
+      :discount_total,
+      :shipping_total,
+      :tax_total,
+      :duties_total,
+      :grand_total
+    ])
+    |> validate_required([
+      :subtotal,
+      :discount_total,
+      :shipping_total,
+      :tax_total,
+      :duties_total,
+      :grand_total
+    ])
     |> validate_number(:subtotal, greater_than_or_equal_to: Decimal.new("0"))
     |> validate_number(:discount_total, greater_than_or_equal_to: Decimal.new("0"))
     |> validate_number(:shipping_total, greater_than_or_equal_to: Decimal.new("0"))
     |> validate_number(:tax_total, greater_than_or_equal_to: Decimal.new("0"))
+    |> validate_number(:duties_total, greater_than_or_equal_to: Decimal.new("0"))
     |> validate_number(:grand_total, greater_than_or_equal_to: Decimal.new("0"))
+  end
+
+  @doc """
+  Changeset for updating cart checkout metadata used by programmatic checkout.
+  """
+  def checkout_context_changeset(cart, attrs) do
+    cart
+    |> cast(attrs, [:buyer_identity, :shipping_address, :shipping_method])
   end
 
   @doc """

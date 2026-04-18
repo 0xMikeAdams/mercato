@@ -55,6 +55,7 @@ defmodule Mercato.Orders.Order do
     field(:discount_total, :decimal, default: Decimal.new("0.00"))
     field(:shipping_total, :decimal, default: Decimal.new("0.00"))
     field(:tax_total, :decimal, default: Decimal.new("0.00"))
+    field(:duties_total, :decimal, default: Decimal.new("0.00"))
     field(:grand_total, :decimal, default: Decimal.new("0.00"))
     field(:billing_address, :map)
     field(:shipping_address, :map)
@@ -85,6 +86,7 @@ defmodule Mercato.Orders.Order do
       :discount_total,
       :shipping_total,
       :tax_total,
+      :duties_total,
       :grand_total,
       :billing_address,
       :shipping_address,
@@ -102,6 +104,7 @@ defmodule Mercato.Orders.Order do
       :discount_total,
       :shipping_total,
       :tax_total,
+      :duties_total,
       :grand_total
     ])
     |> validate_inclusion(:status, @status_options)
@@ -109,6 +112,7 @@ defmodule Mercato.Orders.Order do
     |> validate_number(:discount_total, greater_than_or_equal_to: Decimal.new("0"))
     |> validate_number(:shipping_total, greater_than_or_equal_to: Decimal.new("0"))
     |> validate_number(:tax_total, greater_than_or_equal_to: Decimal.new("0"))
+    |> validate_number(:duties_total, greater_than_or_equal_to: Decimal.new("0"))
     |> validate_number(:grand_total, greater_than_or_equal_to: Decimal.new("0"))
     |> validate_address(:billing_address)
     |> validate_address(:shipping_address)
@@ -135,12 +139,27 @@ defmodule Mercato.Orders.Order do
   """
   def totals_changeset(order, attrs) do
     order
-    |> cast(attrs, [:subtotal, :discount_total, :shipping_total, :tax_total, :grand_total])
-    |> validate_required([:subtotal, :discount_total, :shipping_total, :tax_total, :grand_total])
+    |> cast(attrs, [
+      :subtotal,
+      :discount_total,
+      :shipping_total,
+      :tax_total,
+      :duties_total,
+      :grand_total
+    ])
+    |> validate_required([
+      :subtotal,
+      :discount_total,
+      :shipping_total,
+      :tax_total,
+      :duties_total,
+      :grand_total
+    ])
     |> validate_number(:subtotal, greater_than_or_equal_to: Decimal.new("0"))
     |> validate_number(:discount_total, greater_than_or_equal_to: Decimal.new("0"))
     |> validate_number(:shipping_total, greater_than_or_equal_to: Decimal.new("0"))
     |> validate_number(:tax_total, greater_than_or_equal_to: Decimal.new("0"))
+    |> validate_number(:duties_total, greater_than_or_equal_to: Decimal.new("0"))
     |> validate_number(:grand_total, greater_than_or_equal_to: Decimal.new("0"))
   end
 

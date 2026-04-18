@@ -97,6 +97,7 @@ defmodule Mercato.MixProject do
         "Core Contexts": [
           Mercato.Catalog,
           Mercato.Cart,
+          Mercato.Checkout,
           Mercato.Orders,
           Mercato.Customers,
           Mercato.Coupons,
@@ -104,7 +105,7 @@ defmodule Mercato.MixProject do
           Mercato.Referrals,
           Mercato.Config
         ],
-        "Schemas": [
+        Schemas: [
           Mercato.Catalog.Product,
           Mercato.Catalog.ProductVariant,
           Mercato.Cart.Cart,
@@ -113,7 +114,7 @@ defmodule Mercato.MixProject do
           Mercato.Coupons.Coupon,
           Mercato.Subscriptions.Subscription
         ],
-        "Behaviors": [
+        Behaviors: [
           Mercato.Behaviours.PaymentGateway,
           Mercato.Behaviours.ShippingCalculator,
           Mercato.Behaviours.TaxCalculator
@@ -123,7 +124,7 @@ defmodule Mercato.MixProject do
           Mercato.ReferralController,
           Mercato.Events
         ],
-        "Utilities": [
+        Utilities: [
           Mercato.Cart.Calculator,
           Mercato.Cart.Manager,
           Mercato.Subscriptions.Scheduler

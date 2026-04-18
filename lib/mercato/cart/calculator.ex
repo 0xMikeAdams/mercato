@@ -150,7 +150,7 @@ defmodule Mercato.Cart.Calculator do
   Calculates the grand total for a cart.
 
   The grand total is calculated as:
-  subtotal - discount_total + shipping_total + tax_total
+  subtotal - discount_total + shipping_total + tax_total + duties_total
 
   ## Examples
 
@@ -162,6 +162,17 @@ defmodule Mercato.Cart.Calculator do
     |> Decimal.sub(cart.discount_total || Decimal.new("0.00"))
     |> Decimal.add(cart.shipping_total || Decimal.new("0.00"))
     |> Decimal.add(cart.tax_total || Decimal.new("0.00"))
+    |> Decimal.add(cart.duties_total || Decimal.new("0.00"))
+  end
+
+  @doc """
+  Calculates duties for a cart.
+
+  Duties are not modeled by the built-in calculators today, so the default
+  implementation preserves a caller-supplied override or the persisted cart value.
+  """
+  def calculate_duties(%Cart{} = cart, opts \\ []) do
+    Keyword.get(opts, :duties_total, cart.duties_total || Decimal.new("0.00"))
   end
 
   @doc """
@@ -192,6 +203,7 @@ defmodule Mercato.Cart.Calculator do
     discount_total = calculate_discount(cart)
     shipping_total = calculate_shipping(cart, opts)
     tax_total = calculate_tax(cart, opts)
+    duties_total = calculate_duties(cart, opts)
 
     # Create a temporary cart with calculated values for grand total calculation
     temp_cart = %{
@@ -199,7 +211,8 @@ defmodule Mercato.Cart.Calculator do
       | subtotal: subtotal,
         discount_total: discount_total,
         shipping_total: shipping_total,
-        tax_total: tax_total
+        tax_total: tax_total,
+        duties_total: duties_total
     }
 
     grand_total = calculate_grand_total(temp_cart)
@@ -209,6 +222,7 @@ defmodule Mercato.Cart.Calculator do
       discount_total: discount_total,
       shipping_total: shipping_total,
       tax_total: tax_total,
+      duties_total: duties_total,
       grand_total: grand_total
     }
   end
