@@ -123,6 +123,10 @@ defmodule Mercato.TelemetryTest do
         self()
       )
 
+    # Detach via on_exit so a crash before the inline detach can't leak the handler
+    # into subsequent tests (which would send to a dead pid).
+    on_exit(fn -> :telemetry.detach(handler_id) end)
+
     handler_id
   end
 
