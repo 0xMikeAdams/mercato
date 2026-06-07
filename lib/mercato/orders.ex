@@ -545,26 +545,35 @@ defmodule Mercato.Orders do
     billing_address = get_attr(attrs, :billing_address)
     shipping_address = get_attr(attrs, :shipping_address, billing_address)
 
-    order_attrs =
-      attrs
-      |> put_attr(:order_number, order_number)
-      |> put_attr(:source_cart_id, cart.id)
-      |> put_attr(:user_id, cart.user_id)
-      |> put_attr(:status, "pending")
-      |> put_attr(:subtotal, cart.subtotal)
-      |> put_attr(:discount_total, cart.discount_total)
-      |> put_attr(:shipping_total, cart.shipping_total)
-      |> put_attr(:tax_total, cart.tax_total)
-      |> put_attr(:duties_total, cart.duties_total)
-      |> put_attr(:grand_total, cart.grand_total)
-      |> put_attr(:applied_coupon_id, cart.applied_coupon_id)
-      |> put_attr(:referral_code_id, cart.referral_code_id)
-      |> put_attr(:shipping_address, shipping_address)
-      |> put_attr(:payment_transaction_id, get_attr(attrs, :payment_transaction_id))
-      |> put_attr(:idempotency_key, idempotency_key)
+    # Buyer-supplied fields only.
+    client_attrs = %{
+      billing_address: billing_address,
+      shipping_address: shipping_address,
+      customer_notes: get_attr(attrs, :customer_notes),
+      payment_method: get_attr(attrs, :payment_method)
+    }
+
+    # Server-computed/internal fields. Totals, status, coupon and referral come from
+    # the server-side cart, never from the request — so a client cannot tamper with them.
+    server_attrs = %{
+      order_number: order_number,
+      source_cart_id: cart.id,
+      user_id: cart.user_id,
+      status: "pending",
+      subtotal: cart.subtotal,
+      discount_total: cart.discount_total,
+      shipping_total: cart.shipping_total,
+      tax_total: cart.tax_total,
+      duties_total: cart.duties_total,
+      grand_total: cart.grand_total,
+      applied_coupon_id: cart.applied_coupon_id,
+      referral_code_id: cart.referral_code_id,
+      payment_transaction_id: get_attr(attrs, :payment_transaction_id),
+      idempotency_key: idempotency_key
+    }
 
     %Order{}
-    |> Order.create_changeset(order_attrs)
+    |> Order.create_changeset(client_attrs, server_attrs)
     |> repo().insert()
   end
 
@@ -669,14 +678,6 @@ defmodule Mercato.Orders do
     attrs
     |> get_attr(:idempotency_key)
     |> normalize_idempotency_key()
-  end
-
-  defp put_attr(attrs, key, value) when is_map(attrs) do
-    if Enum.any?(Map.keys(attrs), &is_binary/1) do
-      Map.put(attrs, Atom.to_string(key), value)
-    else
-      Map.put(attrs, key, value)
-    end
   end
 
   defp normalize_idempotency_key(key) when is_binary(key) do
@@ -887,14 +888,19 @@ defmodule Mercato.Orders do
   end
 
   defp create_order_from_subscription_data(subscription, order_number, attrs) do
-    order_attrs =
+    # Subscription renewals are entirely server-generated; the only buyer-style field
+    # is the payment method. Totals/status/identifiers go through server_attrs.
+    client_attrs = Map.take(attrs, [:billing_address, :shipping_address, :customer_notes, :payment_method])
+
+    server_attrs =
       attrs
+      |> Map.drop([:billing_address, :shipping_address, :customer_notes, :payment_method])
       |> Map.put(:order_number, order_number)
       |> Map.put(:user_id, subscription.user_id)
       |> Map.put(:status, "pending")
 
     %Order{}
-    |> Order.create_changeset(order_attrs)
+    |> Order.create_changeset(client_attrs, server_attrs)
     |> repo().insert()
   end
 

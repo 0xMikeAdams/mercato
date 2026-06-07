@@ -83,6 +83,13 @@ defmodule Mercato.ReferralsTest do
 
       assert Decimal.equal?(Referrals.calculate_commission(order, code), Decimal.new("7.50"))
     end
+
+    test "a fixed commission is capped at the order total (no negative-margin payout)" do
+      order = %Orders.Order{grand_total: Decimal.new("10.00")}
+      code = %ReferralCode{commission_type: "fixed", commission_value: Decimal.new("50.00")}
+
+      assert Decimal.equal?(Referrals.calculate_commission(order, code), Decimal.new("10.00"))
+    end
   end
 
   describe "track_conversion/2 — idempotency (no double-credit)" do

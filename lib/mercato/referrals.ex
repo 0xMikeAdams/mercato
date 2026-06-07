@@ -326,19 +326,31 @@ defmodule Mercato.Referrals do
   @doc """
   Calculates the commission amount for an order based on referral code settings.
 
+  The result is capped at the order's `grand_total`: a `fixed` commission can be
+  configured higher than a small order's value, and an uncapped payout would produce
+  a negative-margin sale. Percentage commissions are already bounded by their 0–100
+  range, but the cap applies uniformly as defense in depth.
+
   ## Examples
 
       iex> calculate_commission(order, referral_code)
       Decimal.new("5.00")
   """
   def calculate_commission(%Order{} = order, %ReferralCode{} = referral_code) do
-    case referral_code.commission_type do
-      "percentage" ->
-        percentage = Decimal.div(referral_code.commission_value, 100)
-        Decimal.mult(order.grand_total, percentage)
+    raw =
+      case referral_code.commission_type do
+        "percentage" ->
+          percentage = Decimal.div(referral_code.commission_value, 100)
+          Decimal.mult(order.grand_total, percentage)
 
-      "fixed" ->
-        referral_code.commission_value
+        "fixed" ->
+          referral_code.commission_value
+      end
+
+    if Decimal.compare(raw, order.grand_total) == :gt do
+      order.grand_total
+    else
+      raw
     end
   end
 

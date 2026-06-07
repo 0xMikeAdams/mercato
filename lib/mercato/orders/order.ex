@@ -72,31 +72,41 @@ defmodule Mercato.Orders.Order do
     timestamps(type: :utc_datetime)
   end
 
+  # Buyer-supplied fields — safe to cast from request params.
+  @client_fields [:billing_address, :shipping_address, :customer_notes, :payment_method]
+
+  # Server-computed / internal fields — set only from trusted server values, never cast
+  # from request params (prevents price/discount/total/coupon/referral tampering).
+  @server_fields [
+    :order_number,
+    :source_cart_id,
+    :user_id,
+    :status,
+    :subtotal,
+    :discount_total,
+    :shipping_total,
+    :tax_total,
+    :duties_total,
+    :grand_total,
+    :payment_transaction_id,
+    :idempotency_key,
+    :applied_coupon_id,
+    :referral_code_id
+  ]
+
   @doc """
   Changeset for creating a new order.
+
+  `client_attrs` may only set buyer-supplied fields (#{inspect(@client_fields)}).
+  Every money total, the status, coupon/referral attribution and internal
+  identifiers come exclusively from `server_attrs` and are applied with
+  `put_change/3` — they can never be set from request params. This prevents a
+  client from tampering with prices, discounts, totals, or referral attribution.
   """
-  def create_changeset(order, attrs) do
+  def create_changeset(order, client_attrs, server_attrs) do
     order
-    |> cast(attrs, [
-      :order_number,
-      :source_cart_id,
-      :user_id,
-      :status,
-      :subtotal,
-      :discount_total,
-      :shipping_total,
-      :tax_total,
-      :duties_total,
-      :grand_total,
-      :billing_address,
-      :shipping_address,
-      :customer_notes,
-      :payment_method,
-      :payment_transaction_id,
-      :idempotency_key,
-      :applied_coupon_id,
-      :referral_code_id
-    ])
+    |> cast(client_attrs, @client_fields)
+    |> put_server_fields(server_attrs)
     |> validate_required([
       :order_number,
       :status,
@@ -121,6 +131,24 @@ defmodule Mercato.Orders.Order do
     |> foreign_key_constraint(:source_cart_id)
     |> foreign_key_constraint(:applied_coupon_id)
     |> foreign_key_constraint(:referral_code_id)
+  end
+
+  # Applies trusted server-computed values via put_change (never cast). Accepts a map
+  # with atom or string keys; only the whitelisted @server_fields are applied.
+  defp put_server_fields(changeset, server_attrs) do
+    Enum.reduce(@server_fields, changeset, fn field, cs ->
+      case fetch_attr(server_attrs, field) do
+        {:ok, value} -> put_change(cs, field, value)
+        :error -> cs
+      end
+    end)
+  end
+
+  defp fetch_attr(attrs, key) do
+    case Map.fetch(attrs, key) do
+      {:ok, value} -> {:ok, value}
+      :error -> Map.fetch(attrs, Atom.to_string(key))
+    end
   end
 
   @doc """
