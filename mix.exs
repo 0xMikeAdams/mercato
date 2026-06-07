@@ -15,6 +15,12 @@ defmodule Mercato.MixProject do
       aliases: aliases(),
       deps: deps(),
 
+      # Test coverage (excoveralls)
+      test_coverage: [tool: ExCoveralls],
+
+      # Dialyzer
+      dialyzer: [plt_add_apps: [:ex_unit, :mix]],
+
       # Hex package configuration
       description: description(),
       package: package(),
@@ -26,6 +32,19 @@ defmodule Mercato.MixProject do
       name: "Mercato",
       source_url: @source_url,
       homepage_url: @homepage_url
+    ]
+  end
+
+  # Env in which coverage/quality CLI tasks should run.
+  def cli do
+    [
+      preferred_envs: [
+        check: :test,
+        coveralls: :test,
+        "coveralls.detail": :test,
+        "coveralls.html": :test,
+        "coveralls.json": :test
+      ]
     ]
   end
 
@@ -56,7 +75,14 @@ defmodule Mercato.MixProject do
       # Development and test dependencies
       {:ex_machina, "~> 2.7", only: :test},
       {:stream_data, "~> 1.0", only: :test},
-      {:ex_doc, "~> 0.31", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.31", only: :dev, runtime: false},
+
+      # Quality / security tooling
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+      {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.18", only: :test}
     ]
   end
 
@@ -135,7 +161,25 @@ defmodule Mercato.MixProject do
 
   defp aliases do
     [
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"]
+      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      # Green quality gate for CI: compile cleanly, format, security-scan, audit deps, test.
+      #
+      # deps.audit ignores GHSA-rhv4-8758-jx7v (Decimal unbounded-exponent DoS): the only
+      # fix is decimal 3.0, which ecto (~> 2.0) does not yet allow. Revisit when ecto ships
+      # decimal 3.x support. postgrex/jason already permit it.
+      # NOTE: `format --check-formatted` is intentionally omitted — the existing codebase
+      # is not yet formatted to .formatter.exs. Run a one-time repo-wide `mix format` in a
+      # dedicated commit, then add the check here.
+      check: [
+        "compile --warnings-as-errors",
+        "sobelow --config",
+        "deps.audit --ignore-advisory-ids GHSA-rhv4-8758-jx7v",
+        "test"
+      ],
+      # Advisory static analysis. Not yet in `check`: the codebase has a pre-existing
+      # complexity/readability backlog (tracked in the audit's long-term items). Burn it
+      # down, then promote `credo --strict` into `check`.
+      lint: ["credo --strict"]
     ]
   end
 end
