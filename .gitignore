@@ -27,3 +27,4 @@ mercato-*.tar
 .elixir_ls/
 .tool-versions
 docs/
+.claude
