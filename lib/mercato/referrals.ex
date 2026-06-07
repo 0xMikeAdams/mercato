@@ -326,19 +326,31 @@ defmodule Mercato.Referrals do
   @doc """
   Calculates the commission amount for an order based on referral code settings.
 
+  The result is capped at the order's `grand_total`: a `fixed` commission can be
+  configured higher than a small order's value, and an uncapped payout would produce
+  a negative-margin sale. Percentage commissions are already bounded by their 0–100
+  range, but the cap applies uniformly as defense in depth.
+
   ## Examples
 
       iex> calculate_commission(order, referral_code)
       Decimal.new("5.00")
   """
   def calculate_commission(%Order{} = order, %ReferralCode{} = referral_code) do
-    case referral_code.commission_type do
-      "percentage" ->
-        percentage = Decimal.div(referral_code.commission_value, 100)
-        Decimal.mult(order.grand_total, percentage)
+    raw =
+      case referral_code.commission_type do
+        "percentage" ->
+          percentage = Decimal.div(referral_code.commission_value, 100)
+          Decimal.mult(order.grand_total, percentage)
 
-      "fixed" ->
-        referral_code.commission_value
+        "fixed" ->
+          referral_code.commission_value
+      end
+
+    if Decimal.compare(raw, order.grand_total) == :gt do
+      order.grand_total
+    else
+      raw
     end
   end
 
@@ -367,24 +379,12 @@ defmodule Mercato.Referrals do
       }
   """
   def get_referral_stats(user_id) do
-    case get_referral_code_by_user(user_id, preload: [:referral_clicks, :commissions]) do
+    # NOTE: does not preload the full clicks/commissions associations (which is
+    # unbounded for a popular code). Sums are computed with a GROUP BY aggregate and
+    # the "recent" lists are fetched with their own LIMIT-ed queries.
+    case get_referral_code_by_user(user_id) do
       {:ok, referral_code} ->
-        commissions_by_status = Enum.group_by(referral_code.commissions, & &1.status)
-
-        pending_commission =
-          commissions_by_status
-          |> Map.get("pending", [])
-          |> Enum.reduce(Decimal.new("0"), fn comm, acc -> Decimal.add(acc, comm.amount) end)
-
-        approved_commission =
-          commissions_by_status
-          |> Map.get("approved", [])
-          |> Enum.reduce(Decimal.new("0"), fn comm, acc -> Decimal.add(acc, comm.amount) end)
-
-        paid_commission =
-          commissions_by_status
-          |> Map.get("paid", [])
-          |> Enum.reduce(Decimal.new("0"), fn comm, acc -> Decimal.add(acc, comm.amount) end)
+        commission_sums = commission_sums_by_status(referral_code.id)
 
         conversion_rate =
           if referral_code.clicks_count > 0 do
@@ -398,27 +398,17 @@ defmodule Mercato.Referrals do
             Decimal.new("0")
           end
 
-        recent_clicks =
-          referral_code.referral_clicks
-          |> Enum.sort_by(& &1.clicked_at, {:desc, DateTime})
-          |> Enum.take(10)
-
-        recent_conversions =
-          referral_code.commissions
-          |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
-          |> Enum.take(10)
-
         %{
           referral_code: referral_code.code,
           total_clicks: referral_code.clicks_count,
           total_conversions: referral_code.conversions_count,
           conversion_rate: conversion_rate,
           total_commission: referral_code.total_commission,
-          pending_commission: pending_commission,
-          approved_commission: approved_commission,
-          paid_commission: paid_commission,
-          recent_clicks: recent_clicks,
-          recent_conversions: recent_conversions
+          pending_commission: Map.fetch!(commission_sums, "pending"),
+          approved_commission: Map.fetch!(commission_sums, "approved"),
+          paid_commission: Map.fetch!(commission_sums, "paid"),
+          recent_clicks: recent_clicks(referral_code.id),
+          recent_conversions: recent_conversions(referral_code.id)
         }
 
       {:error, :not_found} ->
@@ -435,6 +425,41 @@ defmodule Mercato.Referrals do
           recent_conversions: []
         }
     end
+  end
+
+  # Sum of commission amounts per status, computed in SQL. Returns a map with every
+  # status key present (defaulting to 0) so callers can Map.fetch!/2 safely.
+  defp commission_sums_by_status(referral_code_id) do
+    sums =
+      from(c in Commission,
+        where: c.referral_code_id == ^referral_code_id,
+        group_by: c.status,
+        select: {c.status, sum(c.amount)}
+      )
+      |> repo().all()
+      |> Map.new(fn {status, total} -> {status, total || Decimal.new("0")} end)
+
+    Enum.reduce(~w(pending approved paid), %{}, fn status, acc ->
+      Map.put(acc, status, Map.get(sums, status, Decimal.new("0")))
+    end)
+  end
+
+  defp recent_clicks(referral_code_id) do
+    from(rc in ReferralClick,
+      where: rc.referral_code_id == ^referral_code_id,
+      order_by: [desc: rc.clicked_at],
+      limit: 10
+    )
+    |> repo().all()
+  end
+
+  defp recent_conversions(referral_code_id) do
+    from(c in Commission,
+      where: c.referral_code_id == ^referral_code_id,
+      order_by: [desc: c.inserted_at],
+      limit: 10
+    )
+    |> repo().all()
   end
 
   ## Commission Management

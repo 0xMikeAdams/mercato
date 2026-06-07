@@ -518,12 +518,30 @@ defmodule Mercato.Coupons do
       }
   """
   def get_coupon_usage_stats(%Coupon{} = coupon) do
-    usages = repo().all(from(cu in CouponUsage, where: cu.coupon_id == ^coupon.id))
+    # Counts are computed in SQL rather than by loading every usage row into memory.
+    # unique_customers counts distinct non-null user_ids (anonymous uses are excluded).
+    totals =
+      from(cu in CouponUsage,
+        where: cu.coupon_id == ^coupon.id,
+        select: %{
+          total_uses: count(cu.id),
+          unique_customers: count(cu.user_id, :distinct)
+        }
+      )
+      |> repo().one()
+
+    recent_uses =
+      from(cu in CouponUsage,
+        where: cu.coupon_id == ^coupon.id,
+        order_by: [desc: cu.used_at],
+        limit: 10
+      )
+      |> repo().all()
 
     %{
-      total_uses: length(usages),
-      unique_customers: usages |> Enum.map(& &1.user_id) |> Enum.uniq() |> length(),
-      recent_uses: Enum.take(Enum.sort_by(usages, & &1.used_at, {:desc, DateTime}), 10)
+      total_uses: totals.total_uses,
+      unique_customers: totals.unique_customers,
+      recent_uses: recent_uses
     }
   end
 

@@ -1,0 +1,15 @@
+# Sobelow configuration for the Mercato library.
+# Run with: mix sobelow --config
+[
+  verbose: false,
+  private: false,
+  skip: true,
+  router: "lib/mercato/router.ex",
+  exit: "low",
+  # Config.HTTPS: Mercato is an embedded library — the host application owns the
+  #   Endpoint and TLS termination, so endpoint-level HTTPS config is out of scope here.
+  ignore: ["Config.HTTPS"],
+  # config/mercato.exs is a documentation template (host apps copy from it); its
+  #   placeholder dev credentials are not real secrets.
+  ignore_files: ["config/mercato.exs"]
+]

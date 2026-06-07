@@ -238,6 +238,27 @@ defmodule Mercato.CouponsTest do
     end
   end
 
+  describe "get_coupon_usage_stats/1 (SQL aggregates)" do
+    test "counts uses and distinct customers in SQL" do
+      coupon = coupon_fixture(%{code: "STATS"})
+      user_id = Ecto.UUID.generate()
+
+      {:ok, order1} = create_order()
+      {:ok, order2} = create_order()
+      {:ok, order3} = create_order()
+
+      assert {:ok, _} = Coupons.record_coupon_usage(coupon, order1.id, user_id)
+      assert {:ok, _} = Coupons.record_coupon_usage(coupon, order2.id, user_id)
+      assert {:ok, _} = Coupons.record_coupon_usage(coupon, order3.id, Ecto.UUID.generate())
+
+      stats = Coupons.get_coupon_usage_stats(coupon)
+
+      assert stats.total_uses == 3
+      assert stats.unique_customers == 2
+      assert length(stats.recent_uses) == 3
+    end
+  end
+
   defp create_order do
     {:ok, product} =
       Catalog.create_product(%{

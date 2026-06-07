@@ -346,4 +346,50 @@ defmodule Mercato.OrdersTest do
       assert second_order.source_cart_id == cart2.id
     end
   end
+
+  describe "create_order_from_cart/2 — totals are server-authoritative" do
+    test "ignores client-supplied totals, status, and coupon; uses cart values" do
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Tamper Product #{System.unique_integer([:positive])}",
+          slug: "tamper-product-#{System.unique_integer([:positive])}",
+          price: Decimal.new("40.00"),
+          sku: "TAMPER-#{System.unique_integer([:positive])}",
+          product_type: "simple",
+          stock_quantity: 10
+        })
+
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "tamper-#{System.unique_integer([:positive])}"})
+
+      {:ok, cart} = Cart.add_item(cart.id, product.id, 2)
+
+      # Malicious client params attempting to zero out the price, force completion,
+      # and attach an arbitrary coupon/referral.
+      {:ok, order} =
+        Orders.create_order_from_cart(cart.id, %{
+          billing_address: %{
+            "line1" => "1 Tamper St",
+            "city" => "Toronto",
+            "state" => "ON",
+            "postal_code" => "A1A1A1",
+            "country" => "CA"
+          },
+          payment_method: "invoice",
+          subtotal: Decimal.new("0.01"),
+          grand_total: Decimal.new("0.01"),
+          status: "completed",
+          applied_coupon_id: Ecto.UUID.generate(),
+          referral_code_id: Ecto.UUID.generate()
+        })
+
+      # Server-side cart values win; injected values are ignored.
+      assert Decimal.equal?(order.subtotal, cart.subtotal)
+      assert Decimal.equal?(order.grand_total, cart.grand_total)
+      refute Decimal.equal?(order.grand_total, Decimal.new("0.01"))
+      assert order.status == "pending"
+      assert order.applied_coupon_id == nil
+      assert order.referral_code_id == nil
+    end
+  end
 end
