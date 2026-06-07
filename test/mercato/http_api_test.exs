@@ -229,6 +229,131 @@ defmodule Mercato.HttpApiTest do
       assert {:ok, referral_code} = Referrals.get_referral_code_by_user(user_id)
       assert referral_code.id == response["data"]["id"]
     end
+
+    test "POST /api/referrals/generate ignores caller-supplied commission terms", %{conn: conn} do
+      user_id = Ecto.UUID.generate()
+
+      conn
+      |> assign(:current_user, %{id: user_id})
+      |> post_json("/api/referrals/generate", %{
+        referral_code: %{commission_type: "fixed", commission_value: "100"}
+      })
+      |> json_response(201)
+
+      {:ok, referral_code} = Referrals.get_referral_code_by_user(user_id)
+      # Server policy (default 5% percentage) wins over the malicious request.
+      assert referral_code.commission_type == "percentage"
+      assert Decimal.equal?(referral_code.commission_value, Decimal.new("5"))
+    end
+
+    test "GET /api/referrals/validate/:code does not disclose referrer or commission", %{
+      conn: conn
+    } do
+      {:ok, code} = Referrals.generate_referral_code(Ecto.UUID.generate())
+
+      response =
+        conn
+        |> json_conn()
+        |> get("/api/referrals/validate/#{code.code}")
+        |> json_response(200)
+
+      assert response["valid"] == true
+      assert response["code"] == code.code
+      refute Map.has_key?(response, "referrer_id")
+      refute Map.has_key?(response, "commission_type")
+      refute Map.has_key?(response, "commission_value")
+    end
+
+    test "GET /api/referrals/stats/:code requires authentication (no public disclosure)", %{
+      conn: conn
+    } do
+      {:ok, code} = Referrals.generate_referral_code(Ecto.UUID.generate())
+
+      response =
+        conn
+        |> json_conn()
+        |> get("/api/referrals/stats/#{code.code}")
+        |> json_response(401)
+
+      assert response["error"] == "unauthorized"
+    end
+  end
+
+  describe "cart authorization" do
+    test "POST /api/carts ignores a client-supplied user_id", %{conn: conn} do
+      response =
+        conn
+        |> post_json("/api/carts", %{user_id: Ecto.UUID.generate()})
+        |> json_response(201)
+
+      # No authenticated session → guest cart, never attributed to the spoofed id.
+      assert response["data"]["user_id"] == nil
+    end
+
+    test "POST /api/carts binds the cart to the authenticated user", %{conn: conn} do
+      user_id = Ecto.UUID.generate()
+
+      response =
+        conn
+        |> assign(:current_user, %{id: user_id})
+        |> post_json("/api/carts", %{user_id: Ecto.UUID.generate()})
+        |> json_response(201)
+
+      assert response["data"]["user_id"] == user_id
+    end
+
+    test "GET /api/carts/:token forbids access to another user's bound cart", %{conn: conn} do
+      owner_id = Ecto.UUID.generate()
+      token = "owned-cart-#{System.unique_integer([:positive])}"
+      {:ok, _cart} = Cart.create_cart(%{cart_token: token, user_id: owner_id})
+
+      # No session → cannot read a user-bound cart even with the token.
+      response =
+        conn
+        |> json_conn()
+        |> get("/api/carts/#{token}")
+        |> json_response(403)
+
+      assert response["error"] == "forbidden"
+
+      # A different authenticated user is also forbidden.
+      response =
+        conn
+        |> assign(:current_user, %{id: Ecto.UUID.generate()})
+        |> json_conn()
+        |> get("/api/carts/#{token}")
+        |> json_response(403)
+
+      assert response["error"] == "forbidden"
+    end
+
+    test "GET /api/carts/:token allows the owner to read their bound cart", %{conn: conn} do
+      owner_id = Ecto.UUID.generate()
+      token = "owner-read-cart-#{System.unique_integer([:positive])}"
+      {:ok, _cart} = Cart.create_cart(%{cart_token: token, user_id: owner_id})
+
+      response =
+        conn
+        |> assign(:current_user, %{id: owner_id})
+        |> json_conn()
+        |> get("/api/carts/#{token}")
+        |> json_response(200)
+
+      assert response["data"]["user_id"] == owner_id
+    end
+
+    test "GET /api/carts/:token allows guest access to an unbound cart", %{conn: conn} do
+      token = "guest-cart-#{System.unique_integer([:positive])}"
+      {:ok, _cart} = Cart.create_cart(%{cart_token: token})
+
+      response =
+        conn
+        |> json_conn()
+        |> get("/api/carts/#{token}")
+        |> json_response(200)
+
+      assert response["data"]["user_id"] == nil
+    end
   end
 
   defp create_order_for_user(user_id) do

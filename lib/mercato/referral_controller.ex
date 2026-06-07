@@ -65,15 +65,12 @@ defmodule Mercato.ReferralController do
   end
 
   def validate(conn, %{"code" => code}) do
+    # Public, unauthenticated endpoint: only confirm whether the code is usable.
+    # The referrer's id and commission terms are private and must NOT be disclosed
+    # to an arbitrary caller (codes are short and enumerable).
     case Referrals.get_referral_code(code) do
       {:ok, referral_code} ->
-        json(conn, %{
-          valid: true,
-          code: referral_code.code,
-          referrer_id: referral_code.user_id,
-          commission_type: referral_code.commission_type,
-          commission_value: referral_code.commission_value
-        })
+        json(conn, %{valid: true, code: referral_code.code})
 
       {:error, :not_found} ->
         conn
@@ -87,26 +84,10 @@ defmodule Mercato.ReferralController do
     end
   end
 
-  def stats(conn, %{"code" => code}) do
-    case Referrals.get_referral_code(code) do
-      {:ok, referral_code} ->
-        stats = Referrals.get_referral_stats(referral_code.user_id)
-
-        json(conn, %{
-          code: referral_code.code,
-          clicks: referral_code.clicks_count,
-          conversions: referral_code.conversions_count,
-          total_commission: referral_code.total_commission,
-          stats: stats
-        })
-
-      {:error, :not_found} ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "Referral code not found"})
-    end
-  end
-
+  # Referral statistics are private to the code's owner. There is intentionally no
+  # code-based public stats endpoint — requesting `/stats/:code` falls through to
+  # this clause, which returns only the *authenticated caller's own* stats and never
+  # another user's clicks/conversions/earnings.
   def stats(conn, _params) do
     with {:ok, user_id} <- current_user_id(conn) do
       json(conn, %{data: Serializer.serialize(Referrals.get_referral_stats(user_id))})

@@ -97,6 +97,26 @@ defmodule Mercato.Referrals.ReferralCode do
     |> unique_constraint(:user_id, name: :referral_codes_user_id_index)
   end
 
+  @doc """
+  Changeset for the **public** referral-code generation path.
+
+  Commission terms (`commission_type`, `commission_value`) and the owning
+  `user_id` are authoritative server inputs — the context supplies them from
+  store configuration, never from end-user request params. A caller may only
+  suggest a custom `code`. Usage counters (`clicks_count`, `conversions_count`,
+  `total_commission`) can never be seeded through this path; they fall back to
+  their schema defaults.
+
+  This prevents a user from minting a referral code that pays themselves an
+  arbitrary commission rate.
+  """
+  def public_changeset(referral_code, attrs) do
+    changeset(
+      referral_code,
+      Map.take(attrs, [:user_id, :code, :commission_type, :commission_value])
+    )
+  end
+
   # Validates that percentage commissions are between 0 and 100
   defp validate_percentage_commission(changeset) do
     commission_type = get_field(changeset, :commission_type)

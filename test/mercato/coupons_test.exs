@@ -1,7 +1,7 @@
 defmodule Mercato.CouponsTest do
   use ExUnit.Case, async: true
 
-  alias Mercato.{Coupons, Repo}
+  alias Mercato.{Catalog, Cart, Coupons, Orders, Repo}
   alias Mercato.Coupons.Coupon
   alias Decimal
 
@@ -197,5 +197,72 @@ defmodule Mercato.CouponsTest do
       # Should not exceed cart subtotal of $200.00
       assert Decimal.equal?(discount_amount, Decimal.new("200.00"))
     end
+  end
+
+  describe "record_coupon_usage/3 — atomic usage-limit enforcement" do
+    test "rejects usage once the global usage_limit is reached" do
+      coupon = coupon_fixture(%{code: "ONCE", usage_limit: 1})
+
+      {:ok, order1} = create_order()
+      {:ok, order2} = create_order()
+
+      assert {:ok, _usage} = Coupons.record_coupon_usage(coupon, order1.id)
+
+      # The cap is enforced atomically inside the increment, not just at validate
+      # time — a second distinct order cannot push usage_count past the limit.
+      assert {:error, :usage_limit_exceeded} = Coupons.record_coupon_usage(coupon, order2.id)
+
+      assert Repo.get!(Coupon, coupon.id).usage_count == 1
+    end
+
+    test "allows usage up to the limit" do
+      coupon = coupon_fixture(%{code: "TWICE", usage_limit: 2})
+
+      {:ok, order1} = create_order()
+      {:ok, order2} = create_order()
+
+      assert {:ok, _} = Coupons.record_coupon_usage(coupon, order1.id)
+      assert {:ok, _} = Coupons.record_coupon_usage(coupon, order2.id)
+
+      assert Repo.get!(Coupon, coupon.id).usage_count == 2
+    end
+
+    test "allows unlimited usage when no usage_limit is set" do
+      coupon = coupon_fixture(%{code: "UNLIMITED"})
+
+      {:ok, order1} = create_order()
+      {:ok, order2} = create_order()
+
+      assert {:ok, _} = Coupons.record_coupon_usage(coupon, order1.id)
+      assert {:ok, _} = Coupons.record_coupon_usage(coupon, order2.id)
+    end
+  end
+
+  defp create_order do
+    {:ok, product} =
+      Catalog.create_product(%{
+        name: "Usage Product #{System.unique_integer([:positive])}",
+        slug: "usage-product-#{System.unique_integer([:positive])}",
+        price: Decimal.new("50.00"),
+        sku: "USAGE-#{System.unique_integer([:positive])}",
+        product_type: "simple",
+        stock_quantity: 50
+      })
+
+    {:ok, cart} =
+      Cart.create_cart(%{cart_token: "usage-cart-#{System.unique_integer([:positive])}"})
+
+    {:ok, _cart} = Cart.add_item(cart.id, product.id, 1)
+
+    Orders.create_order_from_cart(cart.id, %{
+      billing_address: %{
+        "line1" => "1 Usage St",
+        "city" => "Toronto",
+        "state" => "ON",
+        "postal_code" => "A1A1A1",
+        "country" => "CA"
+      },
+      payment_method: "invoice"
+    })
   end
 end

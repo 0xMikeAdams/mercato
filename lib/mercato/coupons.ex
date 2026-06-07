@@ -472,14 +472,29 @@ defmodule Mercato.Coupons do
            })
            |> repo().insert() do
         {:ok, usage} ->
+          # Enforce the global usage cap atomically as part of the increment: the
+          # UPDATE only matches rows still under their limit. If 0 rows match, the
+          # cap was already reached (a concurrent order won the race), so we roll
+          # back. This closes the validate-then-increment TOCTOU window — the check
+          # at validate time is advisory; this is the authoritative gate.
           {updated_count, _} =
-            from(c in Coupon, where: c.id == ^coupon.id)
+            from(c in Coupon,
+              where:
+                c.id == ^coupon.id and
+                  (is_nil(c.usage_limit) or c.usage_count < c.usage_limit)
+            )
             |> repo().update_all(inc: [usage_count: 1])
 
-          if updated_count == 1 do
-            usage
-          else
-            repo().rollback(:coupon_not_found)
+          cond do
+            updated_count == 1 ->
+              usage
+
+            repo().exists?(from(c in Coupon, where: c.id == ^coupon.id)) ->
+              # The coupon exists but the conditional UPDATE matched nothing → cap hit.
+              repo().rollback(:usage_limit_exceeded)
+
+            true ->
+              repo().rollback(:coupon_not_found)
           end
 
         {:error, changeset} ->

@@ -10,11 +10,8 @@ defmodule Mercato.Referrals do
 
   ## Examples
 
-      # Generate a referral code for a user
-      {:ok, referral_code} = Referrals.generate_referral_code(user_id, %{
-        commission_type: "percentage",
-        commission_value: Decimal.new("5")
-      })
+      # Generate a referral code for a user (commission terms come from store config)
+      {:ok, referral_code} = Referrals.generate_referral_code(user_id)
 
       # Track a click on a referral code
       {:ok, click} = Referrals.track_click("ABC123", %{
@@ -41,31 +38,41 @@ defmodule Mercato.Referrals do
   @doc """
   Generates a unique referral code for a user.
 
-  Creates a new referral code with the specified commission settings.
-  The code is automatically generated as a unique alphanumeric string.
+  Commission terms are **not** taken from the caller — they are resolved from the
+  store-operator-controlled `:referral_commission` configuration (defaulting to a
+  5% percentage commission). This prevents a user from minting a referral code
+  that pays themselves an arbitrary rate. Configure the policy with:
+
+      config :mercato, referral_commission: %{type: "percentage", value: Decimal.new("5")}
 
   ## Options
 
-  - `:commission_type` - Required. Either "percentage" or "fixed"
-  - `:commission_value` - Required. Commission amount or percentage
-  - `:code` - Optional. Custom code (will be validated for uniqueness)
+  - `:code` - Optional. A custom code suggestion (validated for format/uniqueness).
+
+  Any `:commission_type`/`:commission_value` passed in `opts` is ignored.
 
   ## Examples
 
-      iex> generate_referral_code(user_id, %{commission_type: "percentage", commission_value: Decimal.new("5")})
+      iex> generate_referral_code(user_id)
       {:ok, %ReferralCode{}}
 
-      iex> generate_referral_code(user_id, %{commission_type: "fixed", commission_value: Decimal.new("10"), code: "CUSTOM123"})
+      iex> generate_referral_code(user_id, %{code: "CUSTOM123"})
       {:ok, %ReferralCode{}}
   """
   def generate_referral_code(user_id, opts \\ %{}) do
+    policy = commission_policy()
+
     attrs =
-      opts
-      |> put_attr(:user_id, user_id)
-      |> put_new_attr_lazy(:code, fn -> generate_unique_code() end)
+      %{
+        user_id: user_id,
+        commission_type: policy.type,
+        commission_value: policy.value
+      }
+      |> maybe_put_custom_code(opts)
+      |> Map.put_new_lazy(:code, fn -> generate_unique_code() end)
 
     %ReferralCode{}
-    |> ReferralCode.changeset(attrs)
+    |> ReferralCode.public_changeset(attrs)
     |> repo().insert()
     |> case do
       {:ok, referral_code} = result ->
@@ -163,19 +170,31 @@ defmodule Mercato.Referrals do
   defp maybe_preload(query, nil), do: query
   defp maybe_preload(query, preloads), do: from(rc in query, preload: ^preloads)
 
-  defp put_attr(attrs, key, value) when is_map(attrs) do
-    if Enum.any?(Map.keys(attrs), &is_binary/1) do
-      Map.put(attrs, Atom.to_string(key), value)
-    else
-      Map.put(attrs, key, value)
+  # Resolves the store-operator-controlled commission policy. Commission terms are a
+  # store-level setting, never something an end user supplies on the request that
+  # generates their own referral code. Configure via:
+  #
+  #     config :mercato, referral_commission: %{type: "percentage", value: Decimal.new("5")}
+  defp commission_policy do
+    case Application.get_env(:mercato, :referral_commission) do
+      %{type: type, value: value} when type in ["percentage", "fixed"] ->
+        %{type: type, value: to_decimal(value)}
+
+      _ ->
+        %{type: "percentage", value: Decimal.new("5")}
     end
   end
 
-  defp put_new_attr_lazy(attrs, key, fun) when is_map(attrs) do
-    if Enum.any?(Map.keys(attrs), &is_binary/1) do
-      Map.put_new_lazy(attrs, Atom.to_string(key), fun)
-    else
-      Map.put_new_lazy(attrs, key, fun)
+  defp to_decimal(%Decimal{} = value), do: value
+  defp to_decimal(value) when is_integer(value), do: Decimal.new(value)
+  defp to_decimal(value) when is_binary(value), do: Decimal.new(value)
+
+  # A caller may suggest a custom code (atom or string key); everything else in opts —
+  # including any commission_type/commission_value — is ignored on the public path.
+  defp maybe_put_custom_code(attrs, opts) do
+    case Map.get(opts, :code) || Map.get(opts, "code") do
+      nil -> attrs
+      code -> Map.put(attrs, :code, code)
     end
   end
 
@@ -250,19 +269,39 @@ defmodule Mercato.Referrals do
     with {:ok, referral_code} <- get_referral_code(code),
          {:ok, order} <- get_order(order_id) do
       repo().transaction(fn ->
-        commission_amount = calculate_commission(order, referral_code)
+        case existing_commission(order.id) do
+          %Commission{} = existing ->
+            # Idempotent: this order's conversion was already credited. Re-crediting
+            # here would inflate total_commission (the order status machine can legally
+            # re-enter "completed"), so we no-op and return the existing commission.
+            existing
 
-        # Create commission record
-        {:ok, commission} =
-          %Commission{}
-          |> Commission.changeset(%{
-            referral_code_id: referral_code.id,
-            order_id: order.id,
-            referee_id: order.user_id,
-            amount: commission_amount
-          })
-          |> repo().insert()
+          nil ->
+            commission_amount = calculate_commission(order, referral_code)
+            insert_commission(referral_code, order, commission_amount)
+        end
+      end)
+    else
+      {:error, :not_found} -> {:error, :referral_code_not_found}
+      {:error, :order_not_found} -> {:error, :order_not_found}
+    end
+  end
 
+  defp existing_commission(order_id) do
+    repo().get_by(Commission, order_id: order_id)
+  end
+
+  defp insert_commission(referral_code, order, commission_amount) do
+    changeset =
+      Commission.changeset(%Commission{}, %{
+        referral_code_id: referral_code.id,
+        order_id: order.id,
+        referee_id: order.user_id,
+        amount: commission_amount
+      })
+
+    case repo().insert(changeset) do
+      {:ok, commission} ->
         {updated_count, _} =
           from(rc in ReferralCode, where: rc.id == ^referral_code.id)
           |> repo().update_all(inc: [conversions_count: 1, total_commission: commission_amount])
@@ -272,10 +311,15 @@ defmodule Mercato.Referrals do
         end
 
         commission
-      end)
-    else
-      {:error, :not_found} -> {:error, :referral_code_not_found}
-      {:error, :order_not_found} -> {:error, :order_not_found}
+
+      {:error, %Ecto.Changeset{errors: errors}} ->
+        # Lost a concurrent race for the same order_id (unique constraint). Treat as
+        # already-credited rather than raising, preserving idempotency.
+        if Keyword.has_key?(errors, :referral_code_id) or Keyword.has_key?(errors, :order_id) do
+          existing_commission(order.id) || repo().rollback(:commission_conflict)
+        else
+          repo().rollback(:invalid_commission)
+        end
     end
   end
 
