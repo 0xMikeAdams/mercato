@@ -541,12 +541,18 @@ defmodule Mercato.Cart do
       |> repo().update()
       |> case do
         {:ok, updated_cart} ->
+          # `cart` was loaded with `items: [:product, :variant]` by get_cart/1 above, and
+          # totals_changeset only updates total fields — so the association carries through
+          # the update unchanged and current. Re-grafting it avoids a redundant preload
+          # query on every cart mutation (add/update/remove each call this).
+          updated_cart = %{updated_cart | items: cart.items}
+
           # Update in-memory state if manager is running
           if Manager.alive?(cart_id) do
             Manager.update_cart(cart_id, updated_cart)
           end
 
-          {:ok, repo().preload(updated_cart, [items: [:product, :variant]], force: true)}
+          {:ok, updated_cart}
 
         {:error, changeset} ->
           {:error, changeset}

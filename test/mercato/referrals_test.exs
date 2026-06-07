@@ -146,6 +146,37 @@ defmodule Mercato.ReferralsTest do
     end
   end
 
+  describe "get_referral_stats/1 (SQL aggregates)" do
+    test "aggregates commission sums by status and lists recent activity" do
+      user_id = Ecto.UUID.generate()
+      {:ok, code} = Referrals.generate_referral_code(user_id)
+      {:ok, order} = create_order(Ecto.UUID.generate())
+      {:ok, _click} = Referrals.track_click(code.code, %{ip_address: "1.2.3.4"})
+      {:ok, commission} = Referrals.track_conversion(code.code, order.id)
+
+      stats = Referrals.get_referral_stats(user_id)
+
+      assert stats.referral_code == code.code
+      assert stats.total_clicks == 1
+      assert stats.total_conversions == 1
+      # New commissions default to "pending".
+      assert Decimal.equal?(stats.pending_commission, commission.amount)
+      assert Decimal.equal?(stats.approved_commission, Decimal.new("0"))
+      assert Decimal.equal?(stats.paid_commission, Decimal.new("0"))
+      assert length(stats.recent_conversions) == 1
+      assert length(stats.recent_clicks) == 1
+    end
+
+    test "returns zeroed stats for a user with no referral code" do
+      stats = Referrals.get_referral_stats(Ecto.UUID.generate())
+
+      assert stats.referral_code == nil
+      assert stats.total_clicks == 0
+      assert Decimal.equal?(stats.pending_commission, Decimal.new("0"))
+      assert stats.recent_conversions == []
+    end
+  end
+
   defp create_order(user_id) do
     {:ok, product} =
       Catalog.create_product(%{
