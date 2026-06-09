@@ -272,7 +272,7 @@ defmodule Mercato.Customers do
       end
 
       address
-      |> Address.changeset(attrs)
+      |> Address.update_changeset(attrs)
       |> repo().update()
       |> case do
         {:ok, address} -> address

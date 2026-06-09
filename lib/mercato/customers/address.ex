@@ -77,6 +77,37 @@ defmodule Mercato.Customers.Address do
       :country,
       :is_default
     ])
+    |> validate_address_fields()
+  end
+
+  @doc """
+  Changeset for updating an existing address.
+
+  `customer_id` is intentionally **not** castable here: an address must not be
+  re-parented onto a different customer via an update (a mass-assignment IDOR — a
+  user owns the current address but could otherwise set `customer_id` to someone
+  else's). It is still validated as required so it stays populated from the
+  persisted record.
+  """
+  def update_changeset(address, attrs) do
+    address
+    |> cast(attrs, [
+      :address_type,
+      :line1,
+      :line2,
+      :city,
+      :state,
+      :postal_code,
+      :country,
+      :is_default
+    ])
+    |> validate_address_fields()
+  end
+
+  # Private Functions
+
+  defp validate_address_fields(changeset) do
+    changeset
     |> validate_required([:customer_id, :address_type, :line1, :city, :state, :postal_code, :country])
     |> validate_inclusion(:address_type, @address_types)
     |> validate_length(:line1, min: 1)
@@ -86,8 +117,6 @@ defmodule Mercato.Customers.Address do
     |> validate_postal_code()
     |> foreign_key_constraint(:customer_id)
   end
-
-  # Private Functions
 
   defp validate_postal_code(changeset) do
     postal_code = get_field(changeset, :postal_code)

@@ -29,12 +29,16 @@ defmodule Mercato.Controllers.OrderController do
     {cart_lookup, order_attrs} = split_order_params(params)
     order_attrs = merge_idempotency_key(order_attrs, conn)
 
-    with {:ok, cart_id} <- resolve_cart_id(cart_lookup),
-         {:ok, order} <- Orders.create_order_from_cart(cart_id, order_attrs) do
+    with {:ok, cart} <- resolve_cart(cart_lookup),
+         :ok <- authorize_cart(conn, cart),
+         {:ok, order} <- Orders.create_order_from_cart(cart.id, order_attrs) do
       render_data(conn, order, :created)
     else
       {:error, :not_found} ->
         render_error(conn, :not_found, "not_found")
+
+      {:error, :forbidden} ->
+        render_error(conn, :forbidden, "forbidden")
 
       {:error, :empty_cart} ->
         render_error(conn, :unprocessable_entity, "empty_cart")
@@ -93,16 +97,22 @@ defmodule Mercato.Controllers.OrderController do
     {params, params}
   end
 
-  defp resolve_cart_id(%{"cart_id" => cart_id}), do: {:ok, cart_id}
+  defp resolve_cart(%{"cart_id" => cart_id}), do: Cart.get_cart(cart_id)
+  defp resolve_cart(%{"cart_token" => cart_token}), do: Cart.get_cart_by_token(cart_token)
+  defp resolve_cart(_), do: {:error, {:missing, "cart_id or cart_token"}}
 
-  defp resolve_cart_id(%{"cart_token" => cart_token}) do
-    case Cart.get_cart_by_token(cart_token) do
-      {:ok, cart} -> {:ok, cart.id}
-      {:error, :not_found} -> {:error, :not_found}
+  # Mirrors CartController.authorize_cart/2: a guest cart (user_id nil) may be checked out by
+  # any caller holding its id/token, but a cart bound to a user may only be converted to an
+  # order by that authenticated user. Without this, POST /orders (a public route) lets an
+  # attacker who knows a user-bound cart's id/token force a checkout against the victim.
+  defp authorize_cart(_conn, %{user_id: nil}), do: :ok
+
+  defp authorize_cart(conn, %{user_id: owner_id}) do
+    case current_user_id(conn) do
+      {:ok, ^owner_id} -> :ok
+      _ -> {:error, :forbidden}
     end
   end
-
-  defp resolve_cart_id(_), do: {:error, {:missing, "cart_id or cart_token"}}
 
   defp merge_idempotency_key(order_attrs, conn) when is_map(order_attrs) do
     case extract_idempotency_key(order_attrs, conn) do
