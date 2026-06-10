@@ -69,7 +69,7 @@ defmodule Mercato.MixProject do
       {:postgrex, "~> 0.17"},
       {:phoenix, "~> 1.7"},
       {:phoenix_pubsub, "~> 2.1"},
-      {:decimal, "~> 2.0"},
+      {:decimal, "~> 2.0 or ~> 3.0"},
       {:jason, "~> 1.4"},
 
       # Development and test dependencies
@@ -162,18 +162,15 @@ defmodule Mercato.MixProject do
   defp aliases do
     [
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
-      # Green quality gate for CI: compile cleanly, format, security-scan, audit deps, test.
+      # Green quality gate for CI: compile cleanly, security-scan, audit deps, test.
       #
-      # deps.audit ignores GHSA-rhv4-8758-jx7v (Decimal unbounded-exponent DoS): the only
-      # fix is decimal 3.0, which ecto (~> 2.0) does not yet allow. Revisit when ecto ships
-      # decimal 3.x support. postgrex/jason already permit it.
       # NOTE: `format --check-formatted` is intentionally omitted — the existing codebase
       # is not yet formatted to .formatter.exs. Run a one-time repo-wide `mix format` in a
       # dedicated commit, then add the check here.
       check: [
         "compile --warnings-as-errors",
         "sobelow --config",
-        "deps.audit --ignore-advisory-ids GHSA-rhv4-8758-jx7v",
+        "deps.audit",
         "test"
       ],
       # Advisory static analysis. Not yet in `check`: the codebase has a pre-existing
