@@ -356,6 +356,138 @@ defmodule Mercato.HttpApiTest do
     end
   end
 
+  describe "order creation authorization" do
+    test "POST /api/orders forbids checkout of another user's bound cart", %{conn: conn} do
+      cart = seeded_cart(user_id: Ecto.UUID.generate())
+
+      # No session → forbidden even with the token.
+      conn
+      |> post_json("/api/orders", order_body(%{cart_token: cart.cart_token}))
+      |> json_response(403)
+
+      # A different authenticated user → forbidden.
+      response =
+        conn
+        |> assign(:current_user, %{id: Ecto.UUID.generate()})
+        |> post_json("/api/orders", order_body(%{cart_token: cart.cart_token}))
+        |> json_response(403)
+
+      assert response["error"] == "forbidden"
+    end
+
+    test "POST /api/orders forbids checkout of a bound cart via raw cart_id", %{conn: conn} do
+      cart = seeded_cart(user_id: Ecto.UUID.generate())
+
+      response =
+        conn
+        |> post_json("/api/orders", order_body(%{cart_id: cart.id}))
+        |> json_response(403)
+
+      assert response["error"] == "forbidden"
+    end
+
+    test "POST /api/orders allows the owner to check out their bound cart", %{conn: conn} do
+      owner_id = Ecto.UUID.generate()
+      cart = seeded_cart(user_id: owner_id)
+
+      response =
+        conn
+        |> assign(:current_user, %{id: owner_id})
+        |> post_json("/api/orders", order_body(%{cart_token: cart.cart_token}))
+        |> json_response(201)
+
+      assert response["data"]["user_id"] == owner_id
+    end
+
+    test "POST /api/orders allows guest checkout of an unbound cart", %{conn: conn} do
+      cart = seeded_cart([])
+
+      response =
+        conn
+        |> post_json("/api/orders", order_body(%{cart_token: cart.cart_token}))
+        |> json_response(201)
+
+      assert response["data"]["user_id"] == nil
+    end
+  end
+
+  describe "address update authorization" do
+    test "PUT /api/customers/addresses/:id cannot re-parent the address to another customer", %{
+      conn: conn
+    } do
+      owner_id = Ecto.UUID.generate()
+
+      {:ok, customer} =
+        Customers.create_customer(%{
+          user_id: owner_id,
+          email: "owner-#{System.unique_integer([:positive])}@example.com",
+          first_name: "Owner",
+          last_name: "Person"
+        })
+
+      {:ok, address} =
+        Customers.add_address(customer.id, %{
+          address_type: "shipping",
+          line1: "1 Owner St",
+          city: "Toronto",
+          state: "ON",
+          postal_code: "A1A1A1",
+          country: "CA"
+        })
+
+      victim_customer_id = Ecto.UUID.generate()
+
+      response =
+        conn
+        |> assign(:current_user, %{id: owner_id})
+        |> put_json("/api/customers/addresses/#{address.id}", %{
+          address: %{customer_id: victim_customer_id, line1: "2 New St"}
+        })
+        |> json_response(200)
+
+      # The legitimate field update applies, but customer_id is NOT re-parented.
+      assert response["data"]["line1"] == "2 New St"
+      assert response["data"]["customer_id"] == customer.id
+      refute response["data"]["customer_id"] == victim_customer_id
+    end
+  end
+
+  defp seeded_cart(cart_attrs) do
+    {:ok, product} =
+      Catalog.create_product(%{
+        name: "Order Auth Product #{System.unique_integer([:positive])}",
+        slug: "order-auth-#{System.unique_integer([:positive])}",
+        price: Decimal.new("19.99"),
+        sku: "ORDAUTH-#{System.unique_integer([:positive])}",
+        product_type: "simple",
+        stock_quantity: 20
+      })
+
+    cart_attrs =
+      %{cart_token: "order-auth-cart-#{System.unique_integer([:positive])}"}
+      |> Map.merge(Map.new(cart_attrs))
+
+    {:ok, cart} = Cart.create_cart(cart_attrs)
+    {:ok, _cart} = Cart.add_item(cart.id, product.id, 1)
+    cart
+  end
+
+  defp order_body(cart_lookup) do
+    Map.merge(
+      %{
+        billing_address: %{
+          "line1" => "1 Order St",
+          "city" => "Toronto",
+          "state" => "ON",
+          "postal_code" => "A1A1A1",
+          "country" => "CA"
+        },
+        payment_method: "invoice"
+      },
+      cart_lookup
+    )
+  end
+
   defp create_order_for_user(user_id) do
     {:ok, product} =
       Catalog.create_product(%{

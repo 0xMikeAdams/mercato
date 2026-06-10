@@ -77,11 +77,27 @@ defmodule Mercato.Controllers.Helpers do
   def parse_decimal(""), do: {:error, :missing_decimal}
   def parse_decimal(%Decimal{} = value), do: {:ok, value}
 
+  # Bound on the length of a money string accepted from a request. Real amounts are far
+  # shorter; this caps the input that reaches Decimal.new.
+  @max_decimal_string_length 32
+
   def parse_decimal(value) when is_binary(value) do
-    try do
-      {:ok, Decimal.new(value)}
-    rescue
-      _error -> {:error, :invalid_decimal}
+    cond do
+      String.length(value) > @max_decimal_string_length ->
+        {:error, :invalid_decimal}
+
+      # Reject scientific/exponent notation. Money values never use it, and an unbounded
+      # exponent (e.g. "1E2147483647") is the DoS vector behind GHSA-rhv4-8758-jx7v for
+      # consumers that resolve decimal < 3.0 (our constraint allows `~> 2.0 or ~> 3.0`).
+      String.contains?(value, ["e", "E"]) ->
+        {:error, :invalid_decimal}
+
+      true ->
+        try do
+          {:ok, Decimal.new(value)}
+        rescue
+          _error -> {:error, :invalid_decimal}
+        end
     end
   end
 
