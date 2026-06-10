@@ -236,6 +236,42 @@ defmodule Mercato.CouponsTest do
       assert {:ok, _} = Coupons.record_coupon_usage(coupon, order1.id)
       assert {:ok, _} = Coupons.record_coupon_usage(coupon, order2.id)
     end
+
+    test "enforces the per-customer limit (authoritatively, not just at validate time)" do
+      coupon = coupon_fixture(%{code: "PERCUST", usage_limit_per_customer: 1})
+      user_id = Ecto.UUID.generate()
+
+      {:ok, order1} = create_order()
+      {:ok, order2} = create_order()
+
+      assert {:ok, _} = Coupons.record_coupon_usage(coupon, order1.id, user_id)
+
+      assert {:error, :customer_usage_limit_exceeded} =
+               Coupons.record_coupon_usage(coupon, order2.id, user_id)
+
+      assert Repo.get!(Coupon, coupon.id).usage_count == 1
+    end
+
+    test "per-customer limit is scoped per user" do
+      coupon = coupon_fixture(%{code: "PERCUST2", usage_limit_per_customer: 1})
+
+      {:ok, order1} = create_order()
+      {:ok, order2} = create_order()
+
+      assert {:ok, _} = Coupons.record_coupon_usage(coupon, order1.id, Ecto.UUID.generate())
+      # A different customer is unaffected by the first customer's usage.
+      assert {:ok, _} = Coupons.record_coupon_usage(coupon, order2.id, Ecto.UUID.generate())
+    end
+
+    test "recording the same order twice returns a changeset error, not a raise" do
+      coupon = coupon_fixture(%{code: "DUPORDER"})
+      {:ok, order} = create_order()
+
+      assert {:ok, _} = Coupons.record_coupon_usage(coupon, order.id)
+      assert {:error, %Ecto.Changeset{}} = Coupons.record_coupon_usage(coupon, order.id)
+      # The duplicate is rolled back — usage_count is not double-incremented.
+      assert Repo.get!(Coupon, coupon.id).usage_count == 1
+    end
   end
 
   describe "get_coupon_usage_stats/1 (SQL aggregates)" do

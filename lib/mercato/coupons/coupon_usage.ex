@@ -49,6 +49,10 @@ defmodule Mercato.Coupons.CouponUsage do
     |> validate_required([:coupon_id, :order_id, :used_at])
     |> foreign_key_constraint(:coupon_id)
     |> foreign_key_constraint(:order_id)
+    # The DB has a unique index on order_id ("one coupon per order"). Declaring the
+    # constraint here turns a duplicate insert into a changeset error instead of a
+    # raised Ecto.ConstraintError, giving callers idempotent handling.
+    |> unique_constraint(:order_id, name: :coupon_usages_order_id_index)
     |> set_default_used_at()
   end
 

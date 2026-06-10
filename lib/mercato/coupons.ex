@@ -463,44 +463,56 @@ defmodule Mercato.Coupons do
   """
   def record_coupon_usage(%Coupon{} = coupon, order_id, user_id \\ nil) do
     repo().transaction(fn ->
-      case %CouponUsage{}
-           |> CouponUsage.changeset(%{
-             coupon_id: coupon.id,
-             user_id: user_id,
-             order_id: order_id,
-             used_at: DateTime.utc_now()
-           })
-           |> repo().insert() do
-        {:ok, usage} ->
-          # Enforce the global usage cap atomically as part of the increment: the
-          # UPDATE only matches rows still under their limit. If 0 rows match, the
-          # cap was already reached (a concurrent order won the race), so we roll
-          # back. This closes the validate-then-increment TOCTOU window — the check
-          # at validate time is advisory; this is the authoritative gate.
-          {updated_count, _} =
-            from(c in Coupon,
-              where:
-                c.id == ^coupon.id and
-                  (is_nil(c.usage_limit) or c.usage_count < c.usage_limit)
-            )
+      # Lock the coupon row for the life of the transaction. This serializes all usage
+      # recording for this coupon, so the global AND per-customer caps are checked and
+      # committed atomically — concurrent orders cannot race past either limit (the prior
+      # version only made the global cap atomic; the per-customer cap stayed advisory).
+      case repo().one(from(c in Coupon, where: c.id == ^coupon.id, lock: "FOR UPDATE")) do
+        nil ->
+          repo().rollback(:coupon_not_found)
+
+        locked ->
+          with :ok <- check_global_limit(locked),
+               :ok <- check_customer_limit(locked, user_id),
+               {:ok, usage} <- insert_coupon_usage(locked.id, order_id, user_id) do
+            from(c in Coupon, where: c.id == ^locked.id)
             |> repo().update_all(inc: [usage_count: 1])
 
-          cond do
-            updated_count == 1 ->
-              usage
-
-            repo().exists?(from(c in Coupon, where: c.id == ^coupon.id)) ->
-              # The coupon exists but the conditional UPDATE matched nothing → cap hit.
-              repo().rollback(:usage_limit_exceeded)
-
-            true ->
-              repo().rollback(:coupon_not_found)
+            usage
+          else
+            {:error, reason} -> repo().rollback(reason)
           end
-
-        {:error, changeset} ->
-          repo().rollback(changeset)
       end
     end)
+  end
+
+  defp check_global_limit(%Coupon{usage_limit: nil}), do: :ok
+
+  defp check_global_limit(%Coupon{usage_limit: limit, usage_count: count}) when count >= limit,
+    do: {:error, :usage_limit_exceeded}
+
+  defp check_global_limit(_coupon), do: :ok
+
+  defp check_customer_limit(%Coupon{usage_limit_per_customer: nil}, _user_id), do: :ok
+  defp check_customer_limit(_coupon, nil), do: :ok
+
+  defp check_customer_limit(%Coupon{} = coupon, user_id) do
+    if get_customer_usage_count(coupon.id, user_id) >= coupon.usage_limit_per_customer do
+      {:error, :customer_usage_limit_exceeded}
+    else
+      :ok
+    end
+  end
+
+  defp insert_coupon_usage(coupon_id, order_id, user_id) do
+    %CouponUsage{}
+    |> CouponUsage.changeset(%{
+      coupon_id: coupon_id,
+      user_id: user_id,
+      order_id: order_id,
+      used_at: DateTime.utc_now()
+    })
+    |> repo().insert()
   end
 
   @doc """
