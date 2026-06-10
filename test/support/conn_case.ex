@@ -12,8 +12,13 @@ defmodule Mercato.ConnCase do
     end
   end
 
-  setup _tags do
-    :ok = Ecto.Adapters.SQL.Sandbox.checkout(Mercato.Repo)
+  setup tags do
+    # Idiomatic Ecto-sandbox owner setup: for non-async tests this runs in shared mode so
+    # the endpoint process tree (and any process a controller action spawns) can use the
+    # test's connection — without this an action doing DB work off the request process
+    # raises DBConnection.OwnershipError.
+    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Mercato.Repo, shared: not tags[:async])
+    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
 
     if Process.whereis(Mercato.TestEndpoint) == nil do
       start_supervised!(Mercato.TestEndpoint)
