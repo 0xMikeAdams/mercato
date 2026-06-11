@@ -309,14 +309,9 @@ defmodule Mercato.Coupons do
 
   # Validates that the cart contains eligible products
   defp validate_product_eligibility(%Coupon{} = coupon, %Cart{} = cart) do
-    # If no product/category rules are defined, all products are eligible
-    if Enum.empty?(coupon.included_product_ids) &&
-         Enum.empty?(coupon.excluded_product_ids) &&
-         Enum.empty?(coupon.included_category_ids) &&
-         Enum.empty?(coupon.excluded_category_ids) do
-      :ok
-    else
-      cart = repo().preload(cart, items: [product: :categories])
+    # If no product/category rules are defined, all products are eligible.
+    if has_product_rules?(coupon) do
+      cart = preload_eligibility(coupon, cart)
       eligible_items = get_eligible_cart_items(coupon, cart.items)
 
       if Enum.empty?(eligible_items) do
@@ -324,6 +319,8 @@ defmodule Mercato.Coupons do
       else
         :ok
       end
+    else
+      :ok
     end
   end
 
@@ -377,6 +374,10 @@ defmodule Mercato.Coupons do
       {:ok, Decimal.new("5.00")}
   """
   def apply_coupon(%Coupon{} = coupon, %Cart{} = cart) do
+    # Preload the product/category associations the eligibility checks need exactly once
+    # here (only when the coupon actually needs them), so the discount helpers below don't
+    # each re-preload the same cart on every recalculation.
+    cart = preload_eligibility(coupon, cart)
     discount_amount = calculate_discount_amount(coupon, cart)
     {:ok, discount_amount}
   end
@@ -406,7 +407,8 @@ defmodule Mercato.Coupons do
   end
 
   defp calculate_discount_amount(%Coupon{discount_type: "fixed_product"} = coupon, %Cart{} = cart) do
-    cart = repo().preload(cart, items: [product: :categories])
+    # Eligibility associations are preloaded once in apply_coupon/2 (fixed_product always
+    # needs them), so no preload here.
     eligible_items = get_eligible_cart_items(coupon, cart.items)
 
     eligible_items
@@ -429,20 +431,40 @@ defmodule Mercato.Coupons do
 
   # Gets the total amount of eligible cart items for discount calculation
   defp get_eligible_cart_amount(%Coupon{} = coupon, %Cart{} = cart) do
-    # If no product/category rules, entire subtotal is eligible
-    if Enum.empty?(coupon.included_product_ids) &&
-         Enum.empty?(coupon.excluded_product_ids) &&
-         Enum.empty?(coupon.included_category_ids) &&
-         Enum.empty?(coupon.excluded_category_ids) do
-      cart.subtotal
-    else
-      cart = repo().preload(cart, items: [product: :categories])
+    # If no product/category rules, the entire subtotal is eligible. When rules exist the
+    # eligibility associations were already preloaded by apply_coupon/2.
+    if has_product_rules?(coupon) do
       eligible_items = get_eligible_cart_items(coupon, cart.items)
 
       eligible_items
       |> Enum.reduce(Decimal.new("0"), fn item, acc ->
         Decimal.add(acc, item.total_price)
       end)
+    else
+      cart.subtotal
+    end
+  end
+
+  # True when the coupon restricts eligibility by product or category.
+  defp has_product_rules?(%Coupon{} = coupon) do
+    not (Enum.empty?(coupon.included_product_ids) and
+           Enum.empty?(coupon.excluded_product_ids) and
+           Enum.empty?(coupon.included_category_ids) and
+           Enum.empty?(coupon.excluded_category_ids))
+  end
+
+  # fixed_product discounts inspect every item's product/categories, so they always need
+  # the eligibility associations; other types only need them when rules are present.
+  defp needs_eligibility?(%Coupon{discount_type: "fixed_product"}), do: true
+  defp needs_eligibility?(%Coupon{} = coupon), do: has_product_rules?(coupon)
+
+  # Preloads product/categories once, only when the coupon needs them. Idempotent: a
+  # no-op when the association is already loaded.
+  defp preload_eligibility(%Coupon{} = coupon, %Cart{} = cart) do
+    if needs_eligibility?(coupon) do
+      repo().preload(cart, items: [product: :categories])
+    else
+      cart
     end
   end
 

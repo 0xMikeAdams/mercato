@@ -99,25 +99,31 @@ defmodule Mercato.CouponsTest do
   describe "coupon validation" do
     setup do
       # Create a test cart with items
-      {:ok, product} = Mercato.Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product-#{System.unique_integer([:positive])}",
-        price: Decimal.new("100.00"),
-        sku: "TEST-#{System.unique_integer([:positive])}",
-        product_type: "simple"
-      })
+      {:ok, product} =
+        Mercato.Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product-#{System.unique_integer([:positive])}",
+          price: Decimal.new("100.00"),
+          sku: "TEST-#{System.unique_integer([:positive])}",
+          product_type: "simple"
+        })
 
-      {:ok, cart} = Mercato.Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+      {:ok, cart} =
+        Mercato.Cart.create_cart(%{
+          cart_token: "test-token-#{System.unique_integer([:positive])}"
+        })
+
       {:ok, cart} = Mercato.Cart.add_item(cart.id, product.id, 1)
 
       %{cart: cart, product: product}
     end
 
     test "validate_coupon/2 returns ok for valid coupon", %{cart: cart} do
-      coupon = coupon_fixture(%{
-        code: "VALID10",
-        min_spend: Decimal.new("50.00")
-      })
+      coupon =
+        coupon_fixture(%{
+          code: "VALID10",
+          min_spend: Decimal.new("50.00")
+        })
 
       assert {:ok, returned_coupon} = Coupons.validate_coupon("VALID10", cart)
       assert returned_coupon.id == coupon.id
@@ -128,20 +134,22 @@ defmodule Mercato.CouponsTest do
     end
 
     test "validate_coupon/2 returns error for expired coupon", %{cart: cart} do
-      _expired_coupon = coupon_fixture(%{
-        code: "EXPIRED",
-        valid_from: DateTime.add(DateTime.utc_now(), -2, :day),
-        valid_until: DateTime.add(DateTime.utc_now(), -1, :day)
-      })
+      _expired_coupon =
+        coupon_fixture(%{
+          code: "EXPIRED",
+          valid_from: DateTime.add(DateTime.utc_now(), -2, :day),
+          valid_until: DateTime.add(DateTime.utc_now(), -1, :day)
+        })
 
       assert {:error, :expired} = Coupons.validate_coupon("EXPIRED", cart)
     end
 
     test "validate_coupon/2 returns error when minimum spend not met", %{cart: cart} do
-      _coupon = coupon_fixture(%{
-        code: "HIGHMIN",
-        min_spend: Decimal.new("200.00")
-      })
+      _coupon =
+        coupon_fixture(%{
+          code: "HIGHMIN",
+          min_spend: Decimal.new("200.00")
+        })
 
       assert {:error, :minimum_spend_not_met} = Coupons.validate_coupon("HIGHMIN", cart)
     end
@@ -149,26 +157,32 @@ defmodule Mercato.CouponsTest do
 
   describe "coupon application" do
     setup do
-      {:ok, product} = Mercato.Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product-#{System.unique_integer([:positive])}",
-        price: Decimal.new("100.00"),
-        sku: "TEST-#{System.unique_integer([:positive])}",
-        product_type: "simple"
-      })
+      {:ok, product} =
+        Mercato.Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product-#{System.unique_integer([:positive])}",
+          price: Decimal.new("100.00"),
+          sku: "TEST-#{System.unique_integer([:positive])}",
+          product_type: "simple"
+        })
 
-      {:ok, cart} = Mercato.Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+      {:ok, cart} =
+        Mercato.Cart.create_cart(%{
+          cart_token: "test-token-#{System.unique_integer([:positive])}"
+        })
+
       {:ok, cart} = Mercato.Cart.add_item(cart.id, product.id, 2)
 
       %{cart: cart, product: product}
     end
 
     test "apply_coupon/2 calculates percentage discount correctly", %{cart: cart} do
-      coupon = coupon_fixture(%{
-        code: "PERCENT10",
-        discount_type: "percentage",
-        discount_value: Decimal.new("10")
-      })
+      coupon =
+        coupon_fixture(%{
+          code: "PERCENT10",
+          discount_type: "percentage",
+          discount_value: Decimal.new("10")
+        })
 
       assert {:ok, discount_amount} = Coupons.apply_coupon(coupon, cart)
       # 10% of $200.00 = $20.00
@@ -176,26 +190,96 @@ defmodule Mercato.CouponsTest do
     end
 
     test "apply_coupon/2 calculates fixed cart discount correctly", %{cart: cart} do
-      coupon = coupon_fixture(%{
-        code: "FIXED20",
-        discount_type: "fixed_cart",
-        discount_value: Decimal.new("20.00")
-      })
+      coupon =
+        coupon_fixture(%{
+          code: "FIXED20",
+          discount_type: "fixed_cart",
+          discount_value: Decimal.new("20.00")
+        })
 
       assert {:ok, discount_amount} = Coupons.apply_coupon(coupon, cart)
       assert Decimal.equal?(discount_amount, Decimal.new("20.00"))
     end
 
     test "apply_coupon/2 limits fixed cart discount to cart total", %{cart: cart} do
-      coupon = coupon_fixture(%{
-        code: "TOOBIG",
-        discount_type: "fixed_cart",
-        discount_value: Decimal.new("300.00")
-      })
+      coupon =
+        coupon_fixture(%{
+          code: "TOOBIG",
+          discount_type: "fixed_cart",
+          discount_value: Decimal.new("300.00")
+        })
 
       assert {:ok, discount_amount} = Coupons.apply_coupon(coupon, cart)
       # Should not exceed cart subtotal of $200.00
       assert Decimal.equal?(discount_amount, Decimal.new("200.00"))
+    end
+  end
+
+  describe "product-eligibility coupons" do
+    setup do
+      {:ok, eligible} =
+        Mercato.Catalog.create_product(%{
+          name: "Eligible",
+          slug: "eligible-#{System.unique_integer([:positive])}",
+          price: Decimal.new("100.00"),
+          sku: "ELIG-#{System.unique_integer([:positive])}",
+          product_type: "simple"
+        })
+
+      {:ok, other} =
+        Mercato.Catalog.create_product(%{
+          name: "Other",
+          slug: "other-#{System.unique_integer([:positive])}",
+          price: Decimal.new("50.00"),
+          sku: "OTHER-#{System.unique_integer([:positive])}",
+          product_type: "simple"
+        })
+
+      {:ok, cart} =
+        Mercato.Cart.create_cart(%{cart_token: "elig-#{System.unique_integer([:positive])}"})
+
+      {:ok, _} = Mercato.Cart.add_item(cart.id, eligible.id, 1)
+      {:ok, cart} = Mercato.Cart.add_item(cart.id, other.id, 1)
+
+      %{cart: cart, eligible: eligible, other: other}
+    end
+
+    test "percentage discount excludes the excluded product", ctx do
+      coupon =
+        coupon_fixture(%{
+          code: "EXCLOTHER",
+          discount_type: "percentage",
+          discount_value: Decimal.new("10"),
+          excluded_product_ids: [ctx.other.id]
+        })
+
+      # 10% of the $100 eligible item only — the $50 item is excluded.
+      assert {:ok, discount} = Coupons.apply_coupon(coupon, ctx.cart)
+      assert Decimal.equal?(discount, Decimal.new("10.00"))
+    end
+
+    test "validate_coupon/2 rejects when no cart item is eligible", ctx do
+      _coupon =
+        coupon_fixture(%{
+          code: "NOELIG",
+          excluded_product_ids: [ctx.eligible.id, ctx.other.id]
+        })
+
+      assert {:error, :no_eligible_products} = Coupons.validate_coupon("NOELIG", ctx.cart)
+    end
+
+    test "fixed_product discount is per eligible unit", ctx do
+      coupon =
+        coupon_fixture(%{
+          code: "FIXEDPROD",
+          discount_type: "fixed_product",
+          discount_value: Decimal.new("5.00"),
+          excluded_product_ids: [ctx.other.id]
+        })
+
+      # $5 off the single eligible unit ($100 product); the $50 item is excluded.
+      assert {:ok, discount} = Coupons.apply_coupon(coupon, ctx.cart)
+      assert Decimal.equal?(discount, Decimal.new("5.00"))
     end
   end
 
