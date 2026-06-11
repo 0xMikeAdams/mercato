@@ -28,3 +28,5 @@ mercato-*.tar
 .tool-versions
 docs/
 .claude
+# Dialyzer PLTs
+/priv/plts/

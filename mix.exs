@@ -19,7 +19,14 @@ defmodule Mercato.MixProject do
       test_coverage: [tool: ExCoveralls],
 
       # Dialyzer
-      dialyzer: [plt_add_apps: [:ex_unit, :mix]],
+      dialyzer: [
+        plt_add_apps: [:ex_unit, :mix],
+        # Stable PLT location so CI can cache it across runs.
+        plt_local_path: "priv/plts",
+        plt_core_path: "priv/plts",
+        ignore_warnings: ".dialyzer_ignore.exs",
+        list_unused_filters: true
+      ],
 
       # Hex package configuration
       description: description(),

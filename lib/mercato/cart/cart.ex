@@ -22,6 +22,8 @@ defmodule Mercato.Cart.Cart do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @type t :: %__MODULE__{}
+
   alias Mercato.Cart.CartItem
 
   @primary_key {:id, :binary_id, autogenerate: true}
