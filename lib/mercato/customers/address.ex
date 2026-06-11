@@ -21,6 +21,8 @@ defmodule Mercato.Customers.Address do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @type t :: %__MODULE__{}
+
   alias Mercato.Customers.Customer
 
   @primary_key {:id, :binary_id, autogenerate: true}
