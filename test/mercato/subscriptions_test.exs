@@ -183,6 +183,39 @@ defmodule Mercato.SubscriptionsTest do
                Subscriptions.process_due_renewals()
     end
 
+    test "get_subscriptions_due_for_renewal/2 bounds results with :limit", %{product: product} do
+      make_due = fn ->
+        {:ok, sub} =
+          Subscriptions.create_subscription(valid_attrs(product.id, %{user_id: Ecto.UUID.generate()}))
+
+        {:ok, _} =
+          sub
+          |> Subscription.billing_changeset(%{next_billing_date: Date.add(Date.utc_today(), -1)})
+          |> Repo.update()
+      end
+
+      make_due.()
+      make_due.()
+      make_due.()
+
+      assert length(Subscriptions.get_subscriptions_due_for_renewal(Date.utc_today())) == 3
+      assert length(Subscriptions.get_subscriptions_due_for_renewal(Date.utc_today(), limit: 2)) == 2
+    end
+
+    test "process_due_renewals/1 honors batch_size", %{product: product} do
+      for _ <- 1..3 do
+        {:ok, sub} =
+          Subscriptions.create_subscription(valid_attrs(product.id, %{user_id: Ecto.UUID.generate()}))
+
+        {:ok, _} =
+          sub
+          |> Subscription.billing_changeset(%{next_billing_date: Date.add(Date.utc_today(), -1)})
+          |> Repo.update()
+      end
+
+      assert {:ok, %{processed: 2}} = Subscriptions.process_due_renewals(batch_size: 2)
+    end
+
     test "scheduler_child_spec/1 returns an explicit optional scheduler child spec" do
       child_spec = Subscriptions.scheduler_child_spec(enabled: true, interval: 30_000)
 
