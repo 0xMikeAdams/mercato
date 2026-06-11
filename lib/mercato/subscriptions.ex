@@ -393,14 +393,23 @@ defmodule Mercato.Subscriptions do
       iex> get_subscriptions_due_for_renewal(Date.add(Date.utc_today(), 1))
       [%Subscription{}, ...]
   """
-  def get_subscriptions_due_for_renewal(date \\ Date.utc_today()) do
-    from(s in Subscription,
-      where: s.status == "active" and s.next_billing_date <= ^date,
-      order_by: [asc: s.next_billing_date]
-    )
+  def get_subscriptions_due_for_renewal(date \\ Date.utc_today(), opts \\ []) do
+    preload = Keyword.get(opts, :preload, [:cycles])
+
+    query =
+      from(s in Subscription,
+        where: s.status == "active" and s.next_billing_date <= ^date,
+        order_by: [asc: s.next_billing_date]
+      )
+
+    query
+    |> maybe_limit(opts[:limit])
     |> repo().all()
-    |> repo().preload(:cycles)
+    |> repo().preload(preload)
   end
+
+  defp maybe_limit(query, nil), do: query
+  defp maybe_limit(query, limit), do: from(s in query, limit: ^limit)
 
   @doc """
   Processes all subscriptions due for renewal behind an advisory lock.
@@ -410,10 +419,10 @@ defmodule Mercato.Subscriptions do
     batch_size = Keyword.get(opts, :batch_size, 100)
 
     with_advisory_lock(fn ->
-      subscriptions =
-        date
-        |> get_subscriptions_due_for_renewal()
-        |> Enum.take(batch_size)
+      # Bound the batch in SQL (was: load-all-then-Enum.take) and skip the :cycles
+      # preload — process_renewal/1 re-fetches each subscription by id, so preloading
+      # cycles here was discarded work.
+      subscriptions = get_subscriptions_due_for_renewal(date, limit: batch_size, preload: [])
 
       {successful, failed} =
         Enum.reduce(subscriptions, {0, 0}, fn subscription, {successful, failed} ->
