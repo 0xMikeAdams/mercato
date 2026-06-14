@@ -77,10 +77,10 @@ defmodule Mercato.ReferralController do
         |> put_status(:not_found)
         |> json(%{valid: false, error: "Referral code not found"})
 
-      {:error, reason} ->
+      {:error, _reason} ->
         conn
         |> put_status(:unprocessable_entity)
-        |> json(%{valid: false, error: "Invalid referral code", reason: inspect(reason)})
+        |> json(%{valid: false, error: "Invalid referral code"})
     end
   end
 

@@ -44,7 +44,7 @@ defmodule Mercato.Controllers.OrderController do
         render_error(conn, :unprocessable_entity, "empty_cart")
 
       {:error, reason} ->
-        render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
@@ -57,7 +57,7 @@ defmodule Mercato.Controllers.OrderController do
       {:error, :forbidden} -> render_error(conn, :forbidden, "forbidden")
       {:error, :not_found} -> render_error(conn, :not_found, "not_found")
       {:error, %Ecto.Changeset{} = changeset} -> render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
@@ -70,7 +70,7 @@ defmodule Mercato.Controllers.OrderController do
     else
       {:error, :unauthorized} -> render_error(conn, :unauthorized, "unauthorized")
       {:error, :not_found} -> render_error(conn, :not_found, "not_found")
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
@@ -85,7 +85,7 @@ defmodule Mercato.Controllers.OrderController do
       {:error, :not_found} -> render_error(conn, :not_found, "not_found")
       {:error, :missing_decimal} -> render_error(conn, :unprocessable_entity, "validation_error", %{reason: "missing amount"})
       {:error, :invalid_decimal} -> render_error(conn, :unprocessable_entity, "validation_error", %{reason: "invalid amount"})
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 

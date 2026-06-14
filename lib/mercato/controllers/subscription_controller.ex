@@ -44,7 +44,7 @@ defmodule Mercato.Controllers.SubscriptionController do
     else
       {:error, :unauthorized} -> render_error(conn, :unauthorized, "unauthorized")
       {:error, :not_found} -> render_error(conn, :not_found, "not_found")
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 

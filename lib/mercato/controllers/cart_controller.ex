@@ -54,7 +54,7 @@ defmodule Mercato.Controllers.CartController do
         render_error(conn, :forbidden, "forbidden")
 
       {:error, reason} ->
-        render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
@@ -73,7 +73,7 @@ defmodule Mercato.Controllers.CartController do
         render_error(conn, :forbidden, "forbidden")
 
       {:error, reason} ->
-        render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
@@ -90,7 +90,7 @@ defmodule Mercato.Controllers.CartController do
         render_error(conn, :forbidden, "forbidden")
 
       {:error, reason} ->
-        render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
@@ -102,7 +102,7 @@ defmodule Mercato.Controllers.CartController do
     else
       {:error, :not_found} -> render_error(conn, :not_found, "not_found")
       {:error, :forbidden} -> render_error(conn, :forbidden, "forbidden")
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
@@ -115,7 +115,7 @@ defmodule Mercato.Controllers.CartController do
     else
       {:error, :not_found} -> render_error(conn, :not_found, "not_found")
       {:error, :forbidden} -> render_error(conn, :forbidden, "forbidden")
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
@@ -127,7 +127,7 @@ defmodule Mercato.Controllers.CartController do
     else
       {:error, :not_found} -> render_error(conn, :not_found, "not_found")
       {:error, :forbidden} -> render_error(conn, :forbidden, "forbidden")
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", %{reason: inspect(reason)})
+      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 

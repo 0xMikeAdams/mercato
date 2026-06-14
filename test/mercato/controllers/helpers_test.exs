@@ -3,6 +3,18 @@ defmodule Mercato.Controllers.HelpersTest do
 
   alias Mercato.Controllers.Helpers
 
+  describe "error_detail/1" do
+    test "exposes atom reasons as a string" do
+      assert Helpers.error_detail(:out_of_stock) == %{reason: "out_of_stock"}
+    end
+
+    test "omits non-atom reasons (no internal leak)" do
+      assert Helpers.error_detail({:missing, "product_id"}) == %{}
+      assert Helpers.error_detail(%Ecto.Changeset{}) == %{}
+      assert Helpers.error_detail("raw string") == %{}
+    end
+  end
+
   describe "parse_decimal/1" do
     test "parses ordinary money strings" do
       assert {:ok, d} = Helpers.parse_decimal("19.99")
