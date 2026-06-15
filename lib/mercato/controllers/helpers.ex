@@ -24,6 +24,17 @@ defmodule Mercato.Controllers.Helpers do
     |> json(body)
   end
 
+  @doc """
+  Builds a safe error-detail map from an internal `reason`.
+
+  Atom reasons are stable, intentional identifiers (e.g. `:out_of_stock`,
+  `:invalid_quantity`) and are exposed as a string. Anything else — tuples,
+  changesets, arbitrary terms — is omitted, so internal field names and control-flow
+  detail never leak into a client response (replaces `inspect(reason)`).
+  """
+  def error_detail(reason) when is_atom(reason), do: %{reason: Atom.to_string(reason)}
+  def error_detail(_reason), do: %{}
+
   def current_user(conn) do
     case conn.assigns[:current_user] do
       nil -> {:error, :unauthorized}
