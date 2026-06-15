@@ -41,7 +41,7 @@ defmodule Mercato.Orders do
 
   alias Ecto.Multi
   alias Mercato
-  alias Mercato.Orders.{Order, OrderItem, OrderStatusHistory}
+  alias Mercato.Orders.{NumberGenerator, Order, OrderItem, OrderStatusHistory}
   alias Mercato.Cart
   alias Mercato.Catalog
   alias Mercato.Coupons
@@ -210,7 +210,7 @@ defmodule Mercato.Orders do
           {:error, reason} -> {:error, reason}
         end
       end)
-      |> Multi.run(:order_number, fn _repo, _changes -> generate_order_number() end)
+      |> Multi.run(:order_number, fn _repo, _changes -> NumberGenerator.generate() end)
       |> Multi.run(:reserve_inventory, fn _repo, %{cart: cart} ->
         case reserve_inventory_for_cart(cart) do
           :ok -> {:ok, :ok}
@@ -526,19 +526,6 @@ defmodule Mercato.Orders do
     end
   end
 
-  defp generate_order_number do
-    # Generate a unique order number with timestamp and random suffix
-    timestamp = DateTime.utc_now() |> DateTime.to_unix()
-    random = :rand.uniform(9999) |> Integer.to_string() |> String.pad_leading(4, "0")
-    order_number = "ORD-#{timestamp}-#{random}"
-
-    # Check if order number already exists (very unlikely but possible)
-    case repo().get_by(Order, order_number: order_number) do
-      nil -> {:ok, order_number}
-      # Retry with new number
-      _existing -> generate_order_number()
-    end
-  end
 
   defp create_order_from_cart_data(cart, order_number, attrs, idempotency_key) do
     # Set shipping address to billing address if not provided
@@ -840,7 +827,7 @@ defmodule Mercato.Orders do
 
     result =
       Multi.new()
-      |> Multi.run(:order_number, fn _repo, _changes -> generate_order_number() end)
+      |> Multi.run(:order_number, fn _repo, _changes -> NumberGenerator.generate() end)
       |> Multi.run(:order, fn _repo, %{order_number: order_number} ->
         create_order_from_subscription_data(subscription, order_number, attrs)
       end)
