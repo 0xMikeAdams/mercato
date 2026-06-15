@@ -1,9 +1,12 @@
-defmodule Mercato.Checkout.Providers.LegacyPaymentProvider do
+defmodule Mercato.Checkout.Providers.DefaultPaymentProvider do
   @moduledoc """
-  Payment-provider adapter that wraps the existing `Mercato.Behaviours.PaymentGateway`.
+  The default `Mercato.Checkout.PaymentProvider`, used by programmatic checkout unless
+  `:payment_provider` is overridden.
 
-  It supports fully server-side payment authorization/capture flows. Host apps can
-  replace it with a Stripe-style provider that returns redirect URLs or client secrets.
+  It bridges to the configured `Mercato.Behaviours.PaymentGateway` (the canonical public
+  extension point — see `Mercato`), running a server-side authorize + capture. To support
+  richer flows (e.g. a Stripe-style redirect URL or client secret), set `:payment_provider`
+  to your own `Mercato.Checkout.PaymentProvider` implementation instead.
   """
 
   @behaviour Mercato.Checkout.PaymentProvider

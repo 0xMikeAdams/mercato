@@ -44,6 +44,34 @@ defmodule Mercato do
         pubsub: MyApp.PubSub,
         payment_gateway: MyApp.PaymentGateway
 
+  ## Extension points
+
+  Mercato has **one** public extension contract: implement a behaviour and point a config
+  key at your module. These are the integration seams for payment, shipping, and tax:
+
+  | Behaviour to implement                   | Config key            | Default            |
+  | ---------------------------------------- | --------------------- | ------------------ |
+  | `Mercato.Behaviours.PaymentGateway`      | `:payment_gateway`    | (none — required for live payments) |
+  | `Mercato.Behaviours.ShippingCalculator`  | `:shipping_calculator`| `Mercato.ShippingCalculators.FlatRate` |
+  | `Mercato.Behaviours.TaxCalculator`       | `:tax_calculator`     | `Mercato.TaxCalculators.Simple` |
+
+      config :mercato,
+        payment_gateway: MyApp.Payments.Stripe,
+        shipping_calculator: MyApp.Shipping.UPS,
+        tax_calculator: MyApp.Tax.Avalara
+
+  These behaviours are consumed by both the cart/order flow and the programmatic-checkout
+  flow, so implementing them is all most integrations need.
+
+  > #### Advanced: checkout providers {: .info}
+  >
+  > The `Mercato.Checkout.{CheckoutProvider, PaymentProvider, ShippingProvider, PricingProvider}`
+  > modules are an **internal orchestration layer** for programmatic checkout whose defaults
+  > delegate down to the behaviours above (e.g. `DefaultPaymentProvider` bridges to your
+  > `PaymentGateway`). Override `:checkout_provider` / `:payment_provider` / `:pricing_provider`
+  > only when you need to replace an entire checkout phase (e.g. a redirect/client-secret
+  > payment flow). They are not the place to plug in a payment gateway, shipping, or tax engine.
+
   ## Usage
 
   Mercato is organized into contexts that provide clear APIs for different domains:

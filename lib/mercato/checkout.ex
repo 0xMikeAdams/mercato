@@ -33,8 +33,8 @@ defmodule Mercato.Checkout do
 
   alias Mercato.Checkout.Providers.{
     DefaultCheckoutProvider,
-    DefaultPricingProvider,
-    LegacyPaymentProvider
+    DefaultPaymentProvider,
+    DefaultPricingProvider
   }
 
   @type line_operation :: %{
@@ -656,7 +656,7 @@ defmodule Mercato.Checkout do
       Keyword.get(
         opts,
         :payment_provider,
-        Application.get_env(:mercato, :payment_provider, LegacyPaymentProvider)
+        Application.get_env(:mercato, :payment_provider, DefaultPaymentProvider)
       )
 
   defp repo, do: Mercato.repo()
