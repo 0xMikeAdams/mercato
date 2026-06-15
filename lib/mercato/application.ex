@@ -5,7 +5,10 @@ defmodule Mercato.Application do
   This module starts and supervises the core components of the Mercato e-commerce engine:
   - Optional Ecto repository (only if `config :mercato, :repo, Mercato.Repo`)
   - Optional Phoenix PubSub (only if `config :mercato, :pubsub, Mercato.PubSub`)
-  - Cart Manager DynamicSupervisor for managing cart GenServers
+
+  Cart state lives in the database; there is no per-cart process. Expiring stale carts
+  is the host's choice — call `Mercato.Cart.expire_stale_carts/0` from a scheduler, or
+  add the optional `Mercato.Cart.Cleanup` worker to your supervision tree.
   """
 
   use Application
@@ -19,13 +22,6 @@ defmodule Mercato.Application do
       []
       |> maybe_add_repo(repo)
       |> maybe_add_pubsub(pubsub)
-      |> Kernel.++([
-        # Registry for Cart Manager GenServers
-        {Registry, keys: :unique, name: Mercato.Cart.Manager.Registry},
-
-        # DynamicSupervisor for Cart GenServers
-        Mercato.Cart.Manager.Supervisor
-      ])
 
     opts = [strategy: :one_for_one, name: Mercato.Supervisor]
     Supervisor.start_link(children, opts)

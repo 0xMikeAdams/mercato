@@ -38,7 +38,7 @@ defmodule Mercato.Cart do
   require Logger
 
   alias Mercato
-  alias Mercato.Cart.{Cart, CartItem, Calculator, Manager}
+  alias Mercato.Cart.{Cart, CartItem, Calculator}
   alias Mercato.Catalog
   alias Mercato.Customers.Address
   alias Mercato.Events
@@ -141,19 +141,6 @@ defmodule Mercato.Cart do
     |> repo().insert()
     |> case do
       {:ok, cart} ->
-        # Start a cart manager GenServer for this cart (skip in test environment)
-        unless Application.get_env(:mercato, :env) == :test do
-          case Manager.Supervisor.start_cart(cart.id) do
-            {:ok, _pid} ->
-              Logger.debug("Started cart manager for cart #{cart.id}")
-
-            {:error, reason} ->
-              Logger.warning(
-                "Failed to start cart manager for cart #{cart.id}: #{inspect(reason)}"
-              )
-          end
-        end
-
         Telemetry.execute([:cart, :create, :stop], %{count: 1}, %{
           cart_id: cart.id,
           user_id: cart.user_id
@@ -547,17 +534,32 @@ defmodule Mercato.Cart do
           # query on every cart mutation (add/update/remove each call this).
           updated_cart = %{updated_cart | items: cart.items}
 
-          # Update in-memory state if manager is running
-          if Manager.alive?(cart_id) do
-            Manager.update_cart(cart_id, updated_cart)
-          end
-
           {:ok, updated_cart}
 
         {:error, changeset} ->
           {:error, changeset}
       end
     end
+  end
+
+  @doc """
+  Marks active carts whose `expires_at` has passed as `"abandoned"`.
+
+  Cart state lives in the database, so expiration is a single set-based sweep rather
+  than a timer per cart. Call this from your own scheduler/cron, or run the optional
+  `Mercato.Cart.Cleanup` worker which calls it periodically. Returns the number of
+  carts expired.
+  """
+  def expire_stale_carts do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    {count, _} =
+      from(c in Cart,
+        where: c.status == "active" and not is_nil(c.expires_at) and c.expires_at < ^now
+      )
+      |> repo().update_all(set: [status: "abandoned", updated_at: now])
+
+    count
   end
 
   @doc """
