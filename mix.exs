@@ -159,7 +159,7 @@ defmodule Mercato.MixProject do
         ],
         Utilities: [
           Mercato.Cart.Calculator,
-          Mercato.Cart.Manager,
+          Mercato.Cart.Cleanup,
           Mercato.Subscriptions.Scheduler
         ]
       ]
