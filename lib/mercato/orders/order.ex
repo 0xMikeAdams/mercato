@@ -39,12 +39,13 @@ defmodule Mercato.Orders.Order do
   use Ecto.Schema
   import Ecto.Changeset
 
-  alias Mercato.Orders.{OrderItem, OrderStatusHistory}
+  alias Mercato.Orders.{OrderItem, OrderStatusHistory, StatusMachine}
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
-  @status_options ~w(pending processing completed cancelled refunded failed)
+  # Status values and transitions are owned by StatusMachine (single source of truth).
+  @status_options StatusMachine.statuses()
 
   schema "orders" do
     field(:order_number, :string)
@@ -230,7 +231,7 @@ defmodule Mercato.Orders.Order do
     old_status = changeset.data.status
     new_status = get_change(changeset, :status)
 
-    if new_status && !valid_status_transition?(old_status, new_status) do
+    if new_status && !StatusMachine.transition_allowed?(old_status, new_status) do
       add_error(
         changeset,
         :status,
@@ -240,17 +241,4 @@ defmodule Mercato.Orders.Order do
       changeset
     end
   end
-
-  # Define valid status transitions
-  defp valid_status_transition?("pending", new_status)
-       when new_status in ~w(processing cancelled failed), do: true
-
-  defp valid_status_transition?("processing", new_status)
-       when new_status in ~w(completed cancelled failed), do: true
-
-  defp valid_status_transition?("completed", new_status) when new_status in ~w(refunded), do: true
-  defp valid_status_transition?("cancelled", _new_status), do: false
-  defp valid_status_transition?("refunded", _new_status), do: false
-  defp valid_status_transition?("failed", new_status) when new_status in ~w(pending), do: true
-  defp valid_status_transition?(_, _), do: false
 end
