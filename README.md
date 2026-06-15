@@ -57,14 +57,16 @@ The installer creates `config/mercato.exs` with safe defaults:
 config :mercato,
   repo: MyApp.Repo,
   pubsub: MyApp.PubSub,
-  payment_gateway: nil,
-  checkout_provider: Mercato.Checkout.Providers.DefaultCheckoutProvider,
-  payment_provider: Mercato.Checkout.Providers.LegacyPaymentProvider,
-  shipping_calculator: Mercato.ShippingCalculators.FlatRate,
-  tax_calculator: Mercato.TaxCalculators.Simple
+  # The public extension points — implement the matching behaviour and point here:
+  payment_gateway: nil,                                   # Mercato.Behaviours.PaymentGateway
+  shipping_calculator: Mercato.ShippingCalculators.FlatRate,  # Mercato.Behaviours.ShippingCalculator
+  tax_calculator: Mercato.TaxCalculators.Simple              # Mercato.Behaviours.TaxCalculator
 ```
 
 Set `payment_gateway` to a real implementation before enabling live payment processing.
+These three behaviours are the one extension contract; see the moduledoc for `Mercato`.
+The `Checkout.*Provider` modules are an advanced, optional orchestration layer (below) —
+not where you plug in a gateway/shipping/tax engine.
 
 ## Phoenix Integration
 
@@ -478,18 +480,20 @@ def handle_info({:order_status_changed, order, old_status, new_status}, socket) 
 end
 ```
 
-For programmatic checkout, prefer the new checkout-specific adapters:
+### Advanced: programmatic-checkout providers
+
+You normally don't touch these — implementing `payment_gateway` (above) is enough, and the
+default `Mercato.Checkout.Providers.DefaultPaymentProvider` bridges programmatic checkout to
+it automatically. Override a provider only to replace a whole checkout *phase*, e.g. a
+redirect / client-secret payment flow the simple authorize/capture gateway can't express:
 
 ```elixir
 config :mercato,
-  checkout_provider: MyApp.RedirectCheckoutProvider,
-  payment_provider: MyApp.StripePaymentProvider
+  checkout_provider: MyApp.RedirectCheckoutProvider,  # redirect/managed checkout handoff
+  payment_provider: MyApp.StripePaymentProvider       # payment-session / intent creation
 ```
 
-`checkout_provider` is responsible for redirect or managed checkout handoffs.
-`payment_provider` is responsible for payment-session or payment-intent creation.
-The default payment adapter wraps the existing `payment_gateway`, so browser-based
-order flows continue to work without changes.
+These are orchestration seams, not payment/shipping/tax integration points.
 
 ## Migration Notes
 
