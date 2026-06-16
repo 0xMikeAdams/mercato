@@ -27,6 +27,8 @@ defmodule Mercato.Cart.Calculator do
   """
 
   alias Mercato.Cart.Cart
+  alias Mercato.Coupons
+  alias Mercato.Coupons.Coupon
   alias Decimal
 
   @doc """
@@ -61,9 +63,17 @@ defmodule Mercato.Cart.Calculator do
     Decimal.new("0.00")
   end
 
-  def calculate_discount(%Cart{applied_coupon_id: coupon_id} = cart) when not is_nil(coupon_id) do
-    alias Mercato.Coupons
+  # Coupon already preloaded on the cart (the common case for cart/serializer paths) —
+  # use it directly instead of issuing another `get_coupon` query on every recalculation.
+  def calculate_discount(
+        %Cart{applied_coupon_id: coupon_id, applied_coupon: %Coupon{} = coupon} = cart
+      )
+      when not is_nil(coupon_id) do
+    {:ok, discount_amount} = Coupons.apply_coupon(coupon, cart)
+    discount_amount
+  end
 
+  def calculate_discount(%Cart{applied_coupon_id: coupon_id} = cart) when not is_nil(coupon_id) do
     case Coupons.get_coupon(coupon_id) do
       {:ok, coupon} ->
         {:ok, discount_amount} = Coupons.apply_coupon(coupon, cart)

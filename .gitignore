@@ -30,3 +30,4 @@ docs/
 .claude
 # Dialyzer PLTs
 /priv/plts/
+.env

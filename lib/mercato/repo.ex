@@ -16,12 +16,12 @@ defmodule Mercato.Repo do
 
   If you want to use `Mercato.Repo`, configure it like any other `Ecto.Repo`:
 
-      # config/config.exs
+      # config/config.exs — pull credentials from the environment, not source
       config :mercato, Mercato.Repo,
         database: "mercato_dev",
-        username: "postgres",
-        password: "postgres",
-        hostname: "localhost"
+        username: System.get_env("POSTGRES_USER", "postgres"),
+        password: System.fetch_env!("POSTGRES_PASSWORD"),
+        hostname: System.get_env("POSTGRES_HOST", "localhost")
 
   ## Usage
 

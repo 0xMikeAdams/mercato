@@ -37,6 +37,13 @@ defmodule Mercato.Checkout do
     DefaultPricingProvider
   }
 
+  # Preloads for the intermediate cart reloads between batch line operations. The product
+  # and variant associations aren't needed to apply the next operation or to recalculate
+  # totals, so we skip those joins here and only force the full `items: [:product, :variant]`
+  # preload once on the final result. `:applied_coupon` is loaded so the calculator reuses it
+  # instead of re-fetching the coupon on every recalculation.
+  @line_op_preloads [:items, :applied_coupon]
+
   @type line_operation :: %{
           required(:action) => String.t() | atom(),
           optional(:item_id) => String.t(),
@@ -418,11 +425,12 @@ defmodule Mercato.Checkout do
   defp remove_line(repo, cart, operation) do
     with {:ok, item} <- fetch_line_item(cart, operation),
          {:ok, _item} <- repo.delete(item) do
-      fetch_cart_for_repo(repo, cart.id)
+      fetch_cart_for_repo(repo, cart.id, @line_op_preloads)
     end
   end
 
-  defp reload_cart({:ok, _result}, cart_id), do: fetch_cart_for_repo(repo(), cart_id)
+  defp reload_cart({:ok, _result}, cart_id),
+    do: fetch_cart_for_repo(repo(), cart_id, @line_op_preloads)
 
   defp reload_cart({:error, changeset}, _cart_id),
     do:
@@ -582,7 +590,7 @@ defmodule Mercato.Checkout do
     end
   end
 
-  defp fetch_cart_for_repo(repo, cart_id) do
+  defp fetch_cart_for_repo(repo, cart_id, preloads \\ [items: [:product, :variant]]) do
     case repo.get(CartRecord, cart_id) do
       nil ->
         {:error,
@@ -593,7 +601,7 @@ defmodule Mercato.Checkout do
          }}
 
       cart ->
-        {:ok, repo.preload(cart, items: [:product, :variant])}
+        {:ok, repo.preload(cart, preloads)}
     end
   end
 
