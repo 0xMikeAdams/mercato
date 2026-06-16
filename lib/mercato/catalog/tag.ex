@@ -25,10 +25,10 @@ defmodule Mercato.Catalog.Tag do
   @foreign_key_type :binary_id
 
   schema "tags" do
-    field :name, :string
-    field :slug, :string
+    field(:name, :string)
+    field(:slug, :string)
 
-    many_to_many :products, Mercato.Catalog.Product, join_through: "product_tags"
+    many_to_many(:products, Mercato.Catalog.Product, join_through: "product_tags")
 
     timestamps()
   end
@@ -49,7 +49,9 @@ defmodule Mercato.Catalog.Tag do
     |> cast(attrs, [:name, :slug])
     |> validate_required([:name, :slug])
     |> validate_length(:name, min: 1)
-    |> validate_format(:slug, ~r/^[a-z0-9-]+$/, message: "must be lowercase alphanumeric with hyphens")
+    |> validate_format(:slug, ~r/^[a-z0-9-]+$/,
+      message: "must be lowercase alphanumeric with hyphens"
+    )
     |> unique_constraint(:slug)
   end
 end

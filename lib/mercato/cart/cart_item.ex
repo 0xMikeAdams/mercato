@@ -26,13 +26,13 @@ defmodule Mercato.Cart.CartItem do
   @foreign_key_type :binary_id
 
   schema "cart_items" do
-    field :quantity, :integer
-    field :unit_price, :decimal
-    field :total_price, :decimal
+    field(:quantity, :integer)
+    field(:unit_price, :decimal)
+    field(:total_price, :decimal)
 
-    belongs_to :cart, Cart
-    belongs_to :product, Product
-    belongs_to :variant, ProductVariant
+    belongs_to(:cart, Cart)
+    belongs_to(:product, Product)
+    belongs_to(:variant, ProductVariant)
 
     timestamps(type: :utc_datetime)
   end

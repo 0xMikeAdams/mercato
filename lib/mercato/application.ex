@@ -30,6 +30,8 @@ defmodule Mercato.Application do
   defp maybe_add_repo(children, Mercato.Repo), do: children ++ [Mercato.Repo]
   defp maybe_add_repo(children, _repo), do: children
 
-  defp maybe_add_pubsub(children, Mercato.PubSub), do: children ++ [{Phoenix.PubSub, name: Mercato.PubSub}]
+  defp maybe_add_pubsub(children, Mercato.PubSub),
+    do: children ++ [{Phoenix.PubSub, name: Mercato.PubSub}]
+
   defp maybe_add_pubsub(children, _pubsub), do: children
 end

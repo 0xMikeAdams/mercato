@@ -5,6 +5,24 @@ defmodule Mercato.Checkout do
   This API keeps cart state, deterministic pricing, checkout-session creation,
   and payment orchestration separate while reusing Mercato's existing cart,
   order, shipping, tax, and payment primitives.
+
+  ## Authorization
+
+  Every function that operates on an *existing* cart is **fail-closed**: the caller must
+  prove it is allowed to act on the cart by passing a `:scope` in `opts`. The host is
+  responsible for authenticating the request and deriving the scope — never take the
+  identity from untrusted request data.
+
+      # Guest cart — prove possession of the cart's high-entropy token:
+      Checkout.update_cart_lines(cart_id, ops, scope: [cart_token: token])
+
+      # Cart owned by an authenticated user — the actor id must match the cart's user_id:
+      Checkout.price_checkout(cart_id, request, scope: [actor_id: current_user_id])
+
+  A missing or mismatched scope, or an unknown `cart_id`, returns
+  `{:error, %Mercato.Checkout.AuthorizationError{code: :forbidden}}` (map it to HTTP 403).
+  The error never distinguishes "forbidden" from "not found", so the endpoints can't be
+  used to enumerate cart ids. `create_cart/2` needs no scope — it mints a new cart.
   """
 
   import Ecto.Query, warn: false
@@ -21,6 +39,7 @@ defmodule Mercato.Checkout do
 
   alias Mercato.Checkout.{
     Address,
+    AuthorizationError,
     BuyerIdentity,
     CheckoutLineItem,
     CheckoutPriceBreakdown,
@@ -63,8 +82,9 @@ defmodule Mercato.Checkout do
     end
   end
 
-  def update_cart_lines(cart_id, operations, _opts \\ []) when is_list(operations) do
-    with :ok <- validate_line_operations(operations),
+  def update_cart_lines(cart_id, operations, opts \\ []) when is_list(operations) do
+    with :ok <- authorize_cart_access(cart_id, opts),
+         :ok <- validate_line_operations(operations),
          {:ok, updated_cart} <-
            repo().transaction(fn ->
              case apply_line_operations(cart_id, operations) do
@@ -86,8 +106,9 @@ defmodule Mercato.Checkout do
     end
   end
 
-  def set_buyer_identity(cart_id, attrs, _opts \\ []) do
-    with {:ok, buyer_identity} <- BuyerIdentity.new(attrs),
+  def set_buyer_identity(cart_id, attrs, opts \\ []) do
+    with :ok <- authorize_cart_access(cart_id, opts),
+         {:ok, buyer_identity} <- BuyerIdentity.new(attrs),
          {:ok, cart} <-
            Cart.update_checkout_context(cart_id, %{
              buyer_identity: BuyerIdentity.to_map(buyer_identity)
@@ -101,7 +122,8 @@ defmodule Mercato.Checkout do
   def set_shipping_address(cart_id, attrs, opts \\ []) do
     shipping_method = Keyword.get(opts, :shipping_method)
 
-    with {:ok, address} <- Address.new(attrs),
+    with :ok <- authorize_cart_access(cart_id, opts),
+         {:ok, address} <- Address.new(attrs),
          {:ok, cart} <-
            Cart.update_checkout_context(
              cart_id,
@@ -122,7 +144,8 @@ defmodule Mercato.Checkout do
     do: price_checkout(cart_id, request, opts)
 
   def price_checkout(cart_id, request \\ %{}, opts \\ []) do
-    with {:ok, request} <- ProgrammaticCheckoutRequest.new(request),
+    with :ok <- authorize_cart_access(cart_id, opts),
+         {:ok, request} <- ProgrammaticCheckoutRequest.new(request),
          {:ok, cart} <- apply_checkout_request(cart_id, request),
          :ok <- validate_ready_for_pricing(cart),
          {:ok, priced_cart} <- ensure_priced(cart, request, opts) do
@@ -133,7 +156,8 @@ defmodule Mercato.Checkout do
   end
 
   def create_checkout_session(cart_id, request \\ %{}, opts \\ []) do
-    with {:ok, request} <- ProgrammaticCheckoutRequest.new(request),
+    with :ok <- authorize_cart_access(cart_id, opts),
+         {:ok, request} <- ProgrammaticCheckoutRequest.new(request),
          :ok <- validate_ready_for_checkout(request),
          {:ok, response} <- price_checkout(cart_id, request, opts),
          provider <- checkout_provider(opts),
@@ -151,7 +175,8 @@ defmodule Mercato.Checkout do
   end
 
   def create_payment_session(cart_id, request \\ %{}, opts \\ []) do
-    with {:ok, request} <- ProgrammaticCheckoutRequest.new(request),
+    with :ok <- authorize_cart_access(cart_id, opts),
+         {:ok, request} <- ProgrammaticCheckoutRequest.new(request),
          :ok <- validate_ready_for_checkout(request),
          {:ok, response} <- price_checkout(cart_id, request, opts),
          provider <- payment_provider(opts),
@@ -169,13 +194,17 @@ defmodule Mercato.Checkout do
   end
 
   def create_payment_intent(cart_id, request \\ %{}, opts \\ []) do
-    request =
-      case request do
-        nil -> %{payment_flow: "payment_intent"}
-        %{} = map -> Map.put(Map.new(map), :payment_flow, "payment_intent")
-      end
+    with :ok <- authorize_cart_access(cart_id, opts) do
+      request =
+        case request do
+          nil -> %{payment_flow: "payment_intent"}
+          %{} = map -> Map.put(Map.new(map), :payment_flow, "payment_intent")
+        end
 
-    create_payment_session(cart_id, request, opts)
+      create_payment_session(cart_id, request, opts)
+    else
+      {:error, error} -> normalize_error(error)
+    end
   end
 
   defp normalize_cart_creation(attrs) when is_map(attrs) do
@@ -365,7 +394,7 @@ defmodule Mercato.Checkout do
     end
   end
 
-  defp validate_ready_for_line_mutation(_cart), do: :ok
+  defp validate_ready_for_line_mutation(cart), do: validate_active_cart(cart)
 
   defp apply_line_operation(repo, cart, operation) do
     action =
@@ -472,6 +501,9 @@ defmodule Mercato.Checkout do
 
   defp validate_ready_for_pricing(cart) do
     cond do
+      cart.status != "active" ->
+        inactive_cart_error()
+
       Enum.empty?(cart.items) ->
         {:error,
          %ValidationError{code: :empty_cart, message: "cart must contain at least one line item"}}
@@ -486,6 +518,17 @@ defmodule Mercato.Checkout do
       true ->
         :ok
     end
+  end
+
+  defp validate_active_cart(%CartRecord{status: "active"}), do: :ok
+  defp validate_active_cart(%CartRecord{}), do: inactive_cart_error()
+
+  defp inactive_cart_error do
+    {:error,
+     %ValidationError{
+       code: :inactive_cart,
+       message: "cart is no longer active"
+     }}
   end
 
   defp validate_ready_for_checkout(request) do
@@ -590,6 +633,54 @@ defmodule Mercato.Checkout do
     end
   end
 
+  # Fail-closed ownership gate for every entry point that operates on an existing cart.
+  # The caller must prove it may act on the cart via a `:scope` in opts:
+  #
+  #   * `scope: [actor_id: user_id]` — for a cart owned by an authenticated user; the id
+  #     must equal the cart's `user_id`.
+  #   * `scope: [cart_token: token]` — for a guest cart (`user_id == nil`); the token must
+  #     equal the cart's high-entropy `cart_token` (proof of possession).
+  #
+  # Anything else — no scope, wrong scope, or a cart_id that does not exist — returns
+  # `%AuthorizationError{}`. We never distinguish "not found" from "forbidden", so the
+  # endpoint can't be used as an oracle to enumerate cart ids. `scope` accepts a keyword
+  # list or a map with atom keys.
+  defp authorize_cart_access(cart_id, opts) do
+    scope = Keyword.get(opts, :scope, [])
+
+    case repo().get(CartRecord, cart_id) do
+      %CartRecord{user_id: owner_id} when not is_nil(owner_id) ->
+        if not is_nil(scope_value(scope, :actor_id)) and scope_value(scope, :actor_id) == owner_id,
+          do: :ok,
+          else: forbidden_cart_access()
+
+      %CartRecord{user_id: nil, cart_token: token} when is_binary(token) ->
+        if secure_token_match?(scope_value(scope, :cart_token), token),
+          do: :ok,
+          else: forbidden_cart_access()
+
+      _ ->
+        forbidden_cart_access()
+    end
+  end
+
+  defp forbidden_cart_access do
+    {:error, %AuthorizationError{message: "not authorized to access this cart", details: %{}}}
+  end
+
+  defp scope_value(scope, key) when is_list(scope), do: Keyword.get(scope, key)
+  defp scope_value(scope, key) when is_map(scope), do: Map.get(scope, key)
+  defp scope_value(_scope, _key), do: nil
+
+  # Constant-time comparison so a mismatched guest token can't be recovered by timing.
+  defp secure_token_match?(provided, expected)
+       when is_binary(provided) and is_binary(expected) and
+              byte_size(provided) == byte_size(expected) do
+    :crypto.exor(provided, expected) == :binary.copy(<<0>>, byte_size(expected))
+  end
+
+  defp secure_token_match?(_provided, _expected), do: false
+
   defp fetch_cart_for_repo(repo, cart_id, preloads \\ [items: [:product, :variant]]) do
     case repo.get(CartRecord, cart_id) do
       nil ->
@@ -669,6 +760,7 @@ defmodule Mercato.Checkout do
 
   defp repo, do: Mercato.repo()
 
+  defp normalize_error(%AuthorizationError{} = error), do: {:error, error}
   defp normalize_error(%ValidationError{} = error), do: {:error, error}
   defp normalize_error(%ProviderError{} = error), do: {:error, error}
   defp normalize_error(%IdempotencyError{} = error), do: {:error, error}

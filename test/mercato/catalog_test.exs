@@ -28,34 +28,37 @@ defmodule Mercato.CatalogTest do
     end
 
     test "list_products/0 returns all products" do
-      {:ok, _product1} = Catalog.create_product(%{
-        name: "Product 1",
-        slug: "product-1",
-        price: Decimal.new("10.00"),
-        sku: "PROD-001",
-        product_type: "simple"
-      })
+      {:ok, _product1} =
+        Catalog.create_product(%{
+          name: "Product 1",
+          slug: "product-1",
+          price: Decimal.new("10.00"),
+          sku: "PROD-001",
+          product_type: "simple"
+        })
 
-      {:ok, _product2} = Catalog.create_product(%{
-        name: "Product 2",
-        slug: "product-2",
-        price: Decimal.new("20.00"),
-        sku: "PROD-002",
-        product_type: "simple"
-      })
+      {:ok, _product2} =
+        Catalog.create_product(%{
+          name: "Product 2",
+          slug: "product-2",
+          price: Decimal.new("20.00"),
+          sku: "PROD-002",
+          product_type: "simple"
+        })
 
       products = Catalog.list_products()
       assert length(products) == 2
     end
 
     test "get_product!/1 returns the product with given id" do
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product",
-        price: Decimal.new("29.99"),
-        sku: "TEST-001",
-        product_type: "simple"
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product",
+          price: Decimal.new("29.99"),
+          sku: "TEST-001",
+          product_type: "simple"
+        })
 
       found_product = Catalog.get_product!(product.id)
       assert found_product.id == product.id
@@ -63,13 +66,14 @@ defmodule Mercato.CatalogTest do
     end
 
     test "update_product/2 updates the product" do
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product",
-        price: Decimal.new("29.99"),
-        sku: "TEST-001",
-        product_type: "simple"
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product",
+          price: Decimal.new("29.99"),
+          sku: "TEST-001",
+          product_type: "simple"
+        })
 
       assert {:ok, updated_product} = Catalog.update_product(product, %{name: "Updated Product"})
       assert updated_product.name == "Updated Product"
@@ -77,13 +81,14 @@ defmodule Mercato.CatalogTest do
     end
 
     test "delete_product/1 deletes the product" do
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product",
-        price: Decimal.new("29.99"),
-        sku: "TEST-001",
-        product_type: "simple"
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product",
+          price: Decimal.new("29.99"),
+          sku: "TEST-001",
+          product_type: "simple"
+        })
 
       assert {:ok, _} = Catalog.delete_product(product)
       assert_raise Ecto.NoResultsError, fn -> Catalog.get_product!(product.id) end
@@ -92,55 +97,59 @@ defmodule Mercato.CatalogTest do
 
   describe "inventory management" do
     test "check_stock/1 returns the stock quantity" do
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product",
-        price: Decimal.new("29.99"),
-        sku: "TEST-001",
-        product_type: "simple",
-        stock_quantity: 100
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product",
+          price: Decimal.new("29.99"),
+          sku: "TEST-001",
+          product_type: "simple",
+          stock_quantity: 100
+        })
 
       assert {:ok, 100} = Catalog.check_stock(product.id)
     end
 
     test "reserve_stock/2 decreases stock quantity" do
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product",
-        price: Decimal.new("29.99"),
-        sku: "TEST-001",
-        product_type: "simple",
-        stock_quantity: 100
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product",
+          price: Decimal.new("29.99"),
+          sku: "TEST-001",
+          product_type: "simple",
+          stock_quantity: 100
+        })
 
       assert :ok = Catalog.reserve_stock(product.id, 10)
       assert {:ok, 90} = Catalog.check_stock(product.id)
     end
 
     test "reserve_stock/2 returns error when insufficient stock" do
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product",
-        price: Decimal.new("29.99"),
-        sku: "TEST-001",
-        product_type: "simple",
-        stock_quantity: 5
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product",
+          price: Decimal.new("29.99"),
+          sku: "TEST-001",
+          product_type: "simple",
+          stock_quantity: 5
+        })
 
       assert {:error, :insufficient_stock} = Catalog.reserve_stock(product.id, 10)
       assert {:ok, 5} = Catalog.check_stock(product.id)
     end
 
     test "release_stock/2 increases stock quantity" do
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product",
-        price: Decimal.new("29.99"),
-        sku: "TEST-001",
-        product_type: "simple",
-        stock_quantity: 100
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product",
+          price: Decimal.new("29.99"),
+          sku: "TEST-001",
+          product_type: "simple",
+          stock_quantity: 100
+        })
 
       assert :ok = Catalog.release_stock(product.id, 10)
       assert {:ok, 110} = Catalog.check_stock(product.id)
@@ -149,13 +158,14 @@ defmodule Mercato.CatalogTest do
 
   describe "variants" do
     test "create_variant/2 creates a variant for a product" do
-      {:ok, product} = Catalog.create_product(%{
-        name: "Variable Product",
-        slug: "variable-product",
-        price: Decimal.new("29.99"),
-        sku: "VAR-001",
-        product_type: "variable"
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Variable Product",
+          slug: "variable-product",
+          price: Decimal.new("29.99"),
+          sku: "VAR-001",
+          product_type: "variable"
+        })
 
       attrs = %{
         sku: "VAR-001-L-BLUE",
@@ -171,23 +181,26 @@ defmodule Mercato.CatalogTest do
     end
 
     test "list_variants/1 returns all variants for a product" do
-      {:ok, product} = Catalog.create_product(%{
-        name: "Variable Product",
-        slug: "variable-product",
-        price: Decimal.new("29.99"),
-        sku: "VAR-001",
-        product_type: "variable"
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Variable Product",
+          slug: "variable-product",
+          price: Decimal.new("29.99"),
+          sku: "VAR-001",
+          product_type: "variable"
+        })
 
-      {:ok, _variant1} = Catalog.create_variant(product.id, %{
-        sku: "VAR-001-L",
-        price: Decimal.new("29.99")
-      })
+      {:ok, _variant1} =
+        Catalog.create_variant(product.id, %{
+          sku: "VAR-001-L",
+          price: Decimal.new("29.99")
+        })
 
-      {:ok, _variant2} = Catalog.create_variant(product.id, %{
-        sku: "VAR-001-XL",
-        price: Decimal.new("31.99")
-      })
+      {:ok, _variant2} =
+        Catalog.create_variant(product.id, %{
+          sku: "VAR-001-XL",
+          price: Decimal.new("31.99")
+        })
 
       variants = Catalog.list_variants(product.id)
       assert length(variants) == 2
@@ -239,13 +252,14 @@ defmodule Mercato.CatalogTest do
 
   describe "product associations" do
     test "set_product_categories/2 associates categories with a product" do
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product",
-        price: Decimal.new("29.99"),
-        sku: "TEST-001",
-        product_type: "simple"
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product",
+          price: Decimal.new("29.99"),
+          sku: "TEST-001",
+          product_type: "simple"
+        })
 
       {:ok, cat1} = Catalog.create_category(%{name: "Category 1", slug: "category-1"})
       {:ok, cat2} = Catalog.create_category(%{name: "Category 2", slug: "category-2"})
@@ -256,13 +270,14 @@ defmodule Mercato.CatalogTest do
     end
 
     test "set_product_tags/2 associates tags with a product" do
-      {:ok, product} = Catalog.create_product(%{
-        name: "Test Product",
-        slug: "test-product",
-        price: Decimal.new("29.99"),
-        sku: "TEST-001",
-        product_type: "simple"
-      })
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Test Product",
+          slug: "test-product",
+          price: Decimal.new("29.99"),
+          sku: "TEST-001",
+          product_type: "simple"
+        })
 
       {:ok, tag1} = Catalog.create_tag(%{name: "Tag 1", slug: "tag-1"})
       {:ok, tag2} = Catalog.create_tag(%{name: "Tag 2", slug: "tag-2"})

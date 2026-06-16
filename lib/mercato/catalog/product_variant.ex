@@ -33,13 +33,13 @@ defmodule Mercato.Catalog.ProductVariant do
   @foreign_key_type :binary_id
 
   schema "product_variants" do
-    field :sku, :string
-    field :price, :decimal
-    field :sale_price, :decimal
-    field :stock_quantity, :integer, default: 0
-    field :attributes, :map, default: %{}
+    field(:sku, :string)
+    field(:price, :decimal)
+    field(:sale_price, :decimal)
+    field(:stock_quantity, :integer, default: 0)
+    field(:attributes, :map, default: %{})
 
-    belongs_to :product, Mercato.Catalog.Product
+    belongs_to(:product, Mercato.Catalog.Product)
 
     timestamps()
   end

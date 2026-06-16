@@ -205,7 +205,7 @@ defmodule Mercato.Orders do
       Multi.new()
       |> Multi.run(:cart, fn _repo, _changes -> Cart.get_cart(cart_id) end)
       |> Multi.run(:validate_cart, fn _repo, %{cart: cart} ->
-        case validate_cart_not_empty(cart) do
+        case validate_cart_for_order(cart) do
           :ok -> {:ok, :ok}
           {:error, reason} -> {:error, reason}
         end
@@ -526,7 +526,6 @@ defmodule Mercato.Orders do
     end
   end
 
-
   defp create_order_from_cart_data(cart, order_number, attrs, idempotency_key) do
     # Set shipping address to billing address if not provided
     billing_address = get_attr(attrs, :billing_address)
@@ -646,11 +645,16 @@ defmodule Mercato.Orders do
     end)
   end
 
-  defp validate_cart_not_empty(cart) do
-    if Enum.empty?(cart.items) do
-      {:error, :empty_cart}
-    else
-      :ok
+  defp validate_cart_for_order(cart) do
+    cond do
+      cart.status != "active" ->
+        {:error, :inactive_cart}
+
+      Enum.empty?(cart.items) ->
+        {:error, :empty_cart}
+
+      true ->
+        :ok
     end
   end
 
@@ -877,7 +881,8 @@ defmodule Mercato.Orders do
   defp create_order_from_subscription_data(subscription, order_number, attrs) do
     # Subscription renewals are entirely server-generated; the only buyer-style field
     # is the payment method. Totals/status/identifiers go through server_attrs.
-    client_attrs = Map.take(attrs, [:billing_address, :shipping_address, :customer_notes, :payment_method])
+    client_attrs =
+      Map.take(attrs, [:billing_address, :shipping_address, :customer_notes, :payment_method])
 
     server_attrs =
       attrs

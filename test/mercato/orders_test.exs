@@ -392,4 +392,36 @@ defmodule Mercato.OrdersTest do
       assert order.referral_code_id == nil
     end
   end
+
+  describe "create_order_from_cart/2 — cart lifecycle" do
+    test "does not create an order from an inactive cart" do
+      {:ok, product} =
+        Catalog.create_product(%{
+          name: "Inactive Cart Product #{System.unique_integer([:positive])}",
+          slug: "inactive-cart-product-#{System.unique_integer([:positive])}",
+          price: Decimal.new("30.00"),
+          sku: "INACTIVE-CART-#{System.unique_integer([:positive])}",
+          product_type: "simple",
+          stock_quantity: 10
+        })
+
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "inactive-order-#{System.unique_integer([:positive])}"})
+
+      {:ok, cart} = Cart.add_item(cart.id, product.id, 1)
+      cart |> Ecto.Changeset.change(status: "abandoned") |> Repo.update!()
+
+      assert {:error, :inactive_cart} =
+               Orders.create_order_from_cart(cart.id, %{
+                 billing_address: %{
+                   "line1" => "1 Closed Cart Way",
+                   "city" => "Toronto",
+                   "state" => "ON",
+                   "postal_code" => "A1A1A1",
+                   "country" => "CA"
+                 },
+                 payment_method: "invoice"
+               })
+    end
+  end
 end

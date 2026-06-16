@@ -37,11 +37,14 @@ defmodule Mercato.Controllers.ProductController do
         render_error(conn, :forbidden, "forbidden")
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+        render_error(conn, :unprocessable_entity, "validation_error", %{
+          details: changeset_errors(changeset)
+        })
     end
   end
 
-  def update(conn, %{"id" => id, "product" => attrs}), do: update(conn, %{"id" => id} |> Map.merge(attrs))
+  def update(conn, %{"id" => id, "product" => attrs}),
+    do: update(conn, %{"id" => id} |> Map.merge(attrs))
 
   def update(conn, %{"id" => id} = attrs) do
     with :ok <- ensure_admin(conn),
@@ -56,7 +59,9 @@ defmodule Mercato.Controllers.ProductController do
         render_error(conn, :not_found, "not_found")
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+        render_error(conn, :unprocessable_entity, "validation_error", %{
+          details: changeset_errors(changeset)
+        })
     end
   end
 
@@ -73,7 +78,9 @@ defmodule Mercato.Controllers.ProductController do
         render_error(conn, :not_found, "not_found")
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+        render_error(conn, :unprocessable_entity, "validation_error", %{
+          details: changeset_errors(changeset)
+        })
     end
   end
 
@@ -85,7 +92,8 @@ defmodule Mercato.Controllers.ProductController do
     end
   end
 
-  def create_variant(conn, %{"product_id" => product_id, "variant" => attrs}), do: create_variant(conn, %{"product_id" => product_id} |> Map.merge(attrs))
+  def create_variant(conn, %{"product_id" => product_id, "variant" => attrs}),
+    do: create_variant(conn, %{"product_id" => product_id} |> Map.merge(attrs))
 
   def create_variant(conn, %{"product_id" => product_id} = attrs) do
     with :ok <- ensure_admin(conn),
@@ -100,7 +108,9 @@ defmodule Mercato.Controllers.ProductController do
         render_error(conn, :not_found, "not_found")
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+        render_error(conn, :unprocessable_entity, "validation_error", %{
+          details: changeset_errors(changeset)
+        })
     end
   end
 end

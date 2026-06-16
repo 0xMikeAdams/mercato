@@ -107,7 +107,9 @@ defmodule Mercato.ReferralController do
         render_error(conn, :unauthorized, "unauthorized")
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+        render_error(conn, :unprocessable_entity, "validation_error", %{
+          details: changeset_errors(changeset)
+        })
     end
   end
 

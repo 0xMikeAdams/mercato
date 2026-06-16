@@ -21,7 +21,9 @@ defmodule Mercato.CartCouponIntegrationTest do
       })
 
     # Create a test cart with items
-    {:ok, cart} = Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+    {:ok, cart} =
+      Cart.create_cart(%{cart_token: "test-token-#{System.unique_integer([:positive])}"})
+
     {:ok, cart} = Cart.add_item(cart.id, product.id, 2)
 
     # Create a test coupon
@@ -50,8 +52,10 @@ defmodule Mercato.CartCouponIntegrationTest do
       # Verify coupon was applied and totals recalculated
       assert updated_cart.applied_coupon_id == coupon.id
       assert Decimal.equal?(updated_cart.subtotal, Decimal.new("200.00"))
-      assert Decimal.equal?(updated_cart.discount_total, Decimal.new("20.00"))  # 10% of $200
-      assert Decimal.equal?(updated_cart.grand_total, Decimal.new("180.00"))    # $200 - $20
+      # 10% of $200
+      assert Decimal.equal?(updated_cart.discount_total, Decimal.new("20.00"))
+      # $200 - $20
+      assert Decimal.equal?(updated_cart.grand_total, Decimal.new("180.00"))
     end
 
     test "apply_coupon/2 returns error for invalid coupon", %{cart: cart} do

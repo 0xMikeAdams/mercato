@@ -39,22 +39,22 @@ defmodule Mercato.Coupons.Coupon do
   @discount_types ~w(percentage fixed_cart fixed_product free_shipping)
 
   schema "coupons" do
-    field :code, :string
-    field :discount_type, :string
-    field :discount_value, :decimal
-    field :min_spend, :decimal
-    field :max_discount, :decimal
-    field :usage_limit, :integer
-    field :usage_limit_per_customer, :integer
-    field :usage_count, :integer, default: 0
-    field :valid_from, :utc_datetime
-    field :valid_until, :utc_datetime
-    field :included_product_ids, {:array, :binary_id}, default: []
-    field :excluded_product_ids, {:array, :binary_id}, default: []
-    field :included_category_ids, {:array, :binary_id}, default: []
-    field :excluded_category_ids, {:array, :binary_id}, default: []
+    field(:code, :string)
+    field(:discount_type, :string)
+    field(:discount_value, :decimal)
+    field(:min_spend, :decimal)
+    field(:max_discount, :decimal)
+    field(:usage_limit, :integer)
+    field(:usage_limit_per_customer, :integer)
+    field(:usage_count, :integer, default: 0)
+    field(:valid_from, :utc_datetime)
+    field(:valid_until, :utc_datetime)
+    field(:included_product_ids, {:array, :binary_id}, default: [])
+    field(:excluded_product_ids, {:array, :binary_id}, default: [])
+    field(:included_category_ids, {:array, :binary_id}, default: [])
+    field(:excluded_category_ids, {:array, :binary_id}, default: [])
 
-    has_many :coupon_usages, Mercato.Coupons.CouponUsage
+    has_many(:coupon_usages, Mercato.Coupons.CouponUsage)
 
     timestamps(type: :utc_datetime)
   end
@@ -100,7 +100,9 @@ defmodule Mercato.Coupons.Coupon do
     ])
     |> validate_required([:code, :discount_type, :discount_value, :valid_from])
     |> validate_length(:code, min: 3)
-    |> validate_format(:code, ~r/^[A-Za-z0-9_-]+$/, message: "must be alphanumeric with hyphens or underscores")
+    |> validate_format(:code, ~r/^[A-Za-z0-9_-]+$/,
+      message: "must be alphanumeric with hyphens or underscores"
+    )
     |> validate_inclusion(:discount_type, @discount_types)
     |> validate_number(:discount_value, greater_than: 0)
     |> validate_number(:min_spend, greater_than_or_equal_to: 0)
@@ -123,7 +125,11 @@ defmodule Mercato.Coupons.Coupon do
       if Decimal.compare(discount_value, 0) == :gt && Decimal.compare(discount_value, 100) != :gt do
         changeset
       else
-        add_error(changeset, :discount_value, "must be between 0 and 100 for percentage discounts")
+        add_error(
+          changeset,
+          :discount_value,
+          "must be between 0 and 100 for percentage discounts"
+        )
       end
     else
       changeset

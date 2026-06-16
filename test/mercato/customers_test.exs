@@ -52,7 +52,10 @@ defmodule Mercato.CustomersTest do
 
     test "update_customer/2 with invalid data returns error changeset" do
       {:ok, customer} = Customers.create_customer(@valid_customer_attrs)
-      assert {:error, %Ecto.Changeset{}} = Customers.update_customer(customer, @invalid_customer_attrs)
+
+      assert {:error, %Ecto.Changeset{}} =
+               Customers.update_customer(customer, @invalid_customer_attrs)
+
       assert {:ok, customer} = Customers.get_customer(customer.user_id)
       assert customer.first_name == "John"
     end
@@ -81,7 +84,14 @@ defmodule Mercato.CustomersTest do
       is_default: true
     }
 
-    @invalid_address_attrs %{address_type: "invalid", line1: "", city: "", state: "", postal_code: "", country: ""}
+    @invalid_address_attrs %{
+      address_type: "invalid",
+      line1: "",
+      city: "",
+      state: "",
+      postal_code: "",
+      country: ""
+    }
 
     setup do
       {:ok, customer} = Customers.create_customer(@valid_customer_attrs)
@@ -89,7 +99,9 @@ defmodule Mercato.CustomersTest do
     end
 
     test "add_address/2 with valid data creates an address", %{customer: customer} do
-      assert {:ok, %Address{} = address} = Customers.add_address(customer.id, @valid_address_attrs)
+      assert {:ok, %Address{} = address} =
+               Customers.add_address(customer.id, @valid_address_attrs)
+
       assert address.address_type == "billing"
       assert address.line1 == "123 Main St"
       assert address.line2 == "Apt 4B"
@@ -101,12 +113,18 @@ defmodule Mercato.CustomersTest do
     end
 
     test "add_address/2 with invalid data returns error changeset", %{customer: customer} do
-      assert {:error, %Ecto.Changeset{}} = Customers.add_address(customer.id, @invalid_address_attrs)
+      assert {:error, %Ecto.Changeset{}} =
+               Customers.add_address(customer.id, @invalid_address_attrs)
     end
 
     test "list_addresses/1 returns all addresses for a customer", %{customer: customer} do
       {:ok, address1} = Customers.add_address(customer.id, @valid_address_attrs)
-      {:ok, address2} = Customers.add_address(customer.id, Map.put(@valid_address_attrs, :address_type, "shipping"))
+
+      {:ok, address2} =
+        Customers.add_address(
+          customer.id,
+          Map.put(@valid_address_attrs, :address_type, "shipping")
+        )
 
       addresses = Customers.list_addresses(customer.id)
       assert length(addresses) == 2
@@ -114,9 +132,16 @@ defmodule Mercato.CustomersTest do
       assert Enum.any?(addresses, &(&1.id == address2.id))
     end
 
-    test "list_addresses/2 with address_type filter returns filtered addresses", %{customer: customer} do
+    test "list_addresses/2 with address_type filter returns filtered addresses", %{
+      customer: customer
+    } do
       {:ok, _billing} = Customers.add_address(customer.id, @valid_address_attrs)
-      {:ok, shipping} = Customers.add_address(customer.id, Map.put(@valid_address_attrs, :address_type, "shipping"))
+
+      {:ok, shipping} =
+        Customers.add_address(
+          customer.id,
+          Map.put(@valid_address_attrs, :address_type, "shipping")
+        )
 
       shipping_addresses = Customers.list_addresses(customer.id, address_type: "shipping")
       assert length(shipping_addresses) == 1
@@ -144,7 +169,10 @@ defmodule Mercato.CustomersTest do
 
     test "update_address/2 with invalid data returns error changeset", %{customer: customer} do
       {:ok, address} = Customers.add_address(customer.id, @valid_address_attrs)
-      assert {:error, %Ecto.Changeset{}} = Customers.update_address(address, @invalid_address_attrs)
+
+      assert {:error, %Ecto.Changeset{}} =
+               Customers.update_address(address, @invalid_address_attrs)
+
       assert {:ok, address} = Customers.get_address(address.id)
       assert address.line1 == "123 Main St"
     end
@@ -161,13 +189,17 @@ defmodule Mercato.CustomersTest do
       assert default_address.id == address.id
     end
 
-    test "get_default_address/2 returns error when no default address exists", %{customer: customer} do
+    test "get_default_address/2 returns error when no default address exists", %{
+      customer: customer
+    } do
       assert {:error, :not_found} = Customers.get_default_address(customer.id, "billing")
     end
 
     test "set_default_address/1 sets address as default and unsets others", %{customer: customer} do
       {:ok, address1} = Customers.add_address(customer.id, @valid_address_attrs)
-      {:ok, address2} = Customers.add_address(customer.id, Map.put(@valid_address_attrs, :is_default, false))
+
+      {:ok, address2} =
+        Customers.add_address(customer.id, Map.put(@valid_address_attrs, :is_default, false))
 
       assert {:ok, %Address{} = updated_address2} = Customers.set_default_address(address2)
       assert updated_address2.is_default == true
@@ -195,12 +227,16 @@ defmodule Mercato.CustomersTest do
       %{customer: customer}
     end
 
-    test "get_order_history/1 returns empty list when customer has no orders", %{customer: customer} do
+    test "get_order_history/1 returns empty list when customer has no orders", %{
+      customer: customer
+    } do
       orders = Customers.get_order_history(customer.id)
       assert orders == []
     end
 
-    test "get_order_history_by_user_id/1 returns empty list when user has no orders", %{customer: customer} do
+    test "get_order_history_by_user_id/1 returns empty list when user has no orders", %{
+      customer: customer
+    } do
       orders = Customers.get_order_history_by_user_id(customer.user_id)
       assert orders == []
     end

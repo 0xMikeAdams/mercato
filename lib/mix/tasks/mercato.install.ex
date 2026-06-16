@@ -305,7 +305,11 @@ defmodule Mix.Tasks.Mercato.Install do
 
     case find_best_scope(router_contents, &api_scope_path?/1, &scope_contains_api_pipe_through?/1) do
       {:ok, %{insert_before_end_line: insert_before_end_line, inner_indent: inner_indent}} ->
-        inject_block_at_line(router_contents, insert_before_end_line, indent_block(api_block, inner_indent))
+        inject_block_at_line(
+          router_contents,
+          insert_before_end_line,
+          indent_block(api_block, inner_indent)
+        )
 
       :error ->
         # Fallback: append a self-contained API scope block near the bottom of the router module.
@@ -345,7 +349,12 @@ defmodule Mix.Tasks.Mercato.Install do
     # END MERCATO_REFERRAL
     """
 
-    upsert_block_before_last_end(router_contents, "MERCATO_REFERRAL", indent_block(block, "  "), force?)
+    upsert_block_before_last_end(
+      router_contents,
+      "MERCATO_REFERRAL",
+      indent_block(block, "  "),
+      force?
+    )
   end
 
   defp inject_block_at_line(contents, insert_before_end_line, indented_block) do
@@ -358,7 +367,9 @@ defmodule Mix.Tasks.Mercato.Install do
   defp insert_lines_with_spacing(head, block_lines, tail) do
     head =
       case List.last(head) do
-        nil -> head
+        nil ->
+          head
+
         last ->
           if String.trim(last) == "" do
             head
@@ -369,7 +380,9 @@ defmodule Mix.Tasks.Mercato.Install do
 
     tail =
       case tail do
-        [] -> tail
+        [] ->
+          tail
+
         [first | _] ->
           if String.trim(first) == "" do
             tail
@@ -387,7 +400,9 @@ defmodule Mix.Tasks.Mercato.Install do
     scope_starts =
       lines
       |> Enum.with_index()
-      |> Enum.filter(fn {line, _idx} -> String.match?(line, ~r/^\s*scope\s+"/) and String.contains?(line, " do") end)
+      |> Enum.filter(fn {line, _idx} ->
+        String.match?(line, ~r/^\s*scope\s+"/) and String.contains?(line, " do")
+      end)
       |> Enum.map(fn {line, idx} -> {idx, line} end)
 
     candidates =
@@ -531,6 +546,7 @@ defmodule Mix.Tasks.Mercato.Install do
 
   defp router_file?(path) do
     content = File.read!(path)
+
     String.contains?(content, "defmodule") and String.contains?(content, ".Router") and
       (String.contains?(content, ":router") or String.contains?(content, "use Phoenix.Router"))
   end

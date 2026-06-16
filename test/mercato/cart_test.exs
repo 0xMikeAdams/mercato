@@ -103,6 +103,15 @@ defmodule Mercato.CartTest do
       assert {:error, :invalid_quantity} = Cart.add_item(cart.id, product.id, -1)
     end
 
+    test "returns an error for an inactive cart", %{product: product} do
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "inactive-token-#{System.unique_integer([:positive])}"})
+
+      cart |> Ecto.Changeset.change(status: "abandoned") |> Repo.update!()
+
+      assert {:error, :inactive_cart} = Cart.add_item(cart.id, product.id, 1)
+    end
+
     test "returns an error when variant does not belong to product", %{product: product} do
       {:ok, other_product} =
         Catalog.create_product(%{
@@ -156,6 +165,18 @@ defmodule Mercato.CartTest do
       assert {:error, :invalid_quantity} = Cart.update_item_quantity(cart.id, item.id, 0)
       assert {:error, :invalid_quantity} = Cart.update_item_quantity(cart.id, item.id, -3)
     end
+
+    test "returns an error for an inactive cart", %{product: product} do
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "inactive-update-#{System.unique_integer([:positive])}"})
+
+      {:ok, cart} = Cart.add_item(cart.id, product.id, 2)
+      item = List.first(cart.items)
+
+      cart |> Ecto.Changeset.change(status: "abandoned") |> Repo.update!()
+
+      assert {:error, :inactive_cart} = Cart.update_item_quantity(cart.id, item.id, 3)
+    end
   end
 
   describe "remove_item/2" do
@@ -170,6 +191,18 @@ defmodule Mercato.CartTest do
 
       assert length(updated_cart.items) == 0
       assert Decimal.equal?(updated_cart.subtotal, Decimal.new("0.00"))
+    end
+
+    test "returns an error for an inactive cart", %{product: product} do
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "inactive-remove-#{System.unique_integer([:positive])}"})
+
+      {:ok, cart} = Cart.add_item(cart.id, product.id, 2)
+      item = List.first(cart.items)
+
+      cart |> Ecto.Changeset.change(status: "abandoned") |> Repo.update!()
+
+      assert {:error, :inactive_cart} = Cart.remove_item(cart.id, item.id)
     end
   end
 
@@ -186,6 +219,16 @@ defmodule Mercato.CartTest do
       assert Decimal.equal?(cleared_cart.subtotal, Decimal.new("0.00"))
       assert Decimal.equal?(cleared_cart.grand_total, Decimal.new("0.00"))
     end
+
+    test "returns an error for an inactive cart", %{product: product} do
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "inactive-clear-#{System.unique_integer([:positive])}"})
+
+      {:ok, cart} = Cart.add_item(cart.id, product.id, 2)
+      cart |> Ecto.Changeset.change(status: "abandoned") |> Repo.update!()
+
+      assert {:error, :inactive_cart} = Cart.clear_cart(cart.id)
+    end
   end
 
   describe "recalculate_totals/2" do
@@ -200,6 +243,16 @@ defmodule Mercato.CartTest do
       expected_subtotal = Decimal.mult(product.price, 3)
       assert Decimal.equal?(recalculated_cart.subtotal, expected_subtotal)
       assert Decimal.equal?(recalculated_cart.grand_total, expected_subtotal)
+    end
+
+    test "returns an error for an inactive cart", %{product: product} do
+      {:ok, cart} =
+        Cart.create_cart(%{cart_token: "inactive-recalc-#{System.unique_integer([:positive])}"})
+
+      {:ok, cart} = Cart.add_item(cart.id, product.id, 3)
+      cart |> Ecto.Changeset.change(status: "abandoned") |> Repo.update!()
+
+      assert {:error, :inactive_cart} = Cart.recalculate_totals(cart.id)
     end
   end
 end

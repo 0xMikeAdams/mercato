@@ -2,7 +2,14 @@ defmodule Mercato.CheckoutTest do
   use ExUnit.Case, async: false
 
   alias Mercato.{Catalog, Checkout, Repo}
-  alias Mercato.Checkout.{CheckoutSession, ProgrammaticCheckoutRequest, ValidationError}
+
+  alias Mercato.Checkout.{
+    AuthorizationError,
+    CheckoutSession,
+    ProgrammaticCheckoutRequest,
+    ValidationError
+  }
+
   alias Mercato.Checkout.CheckoutProvider
   alias Mercato.Checkout.PaymentProvider
   alias Mercato.ShippingCalculators.FlatRate
@@ -120,21 +127,28 @@ defmodule Mercato.CheckoutTest do
   describe "programmatic checkout flow" do
     test "prices a cart deterministically before checkout creation", %{product: product} do
       {:ok, cart} = Checkout.create_cart(%{})
+      scope = scope_for(cart)
 
       {:ok, updated} =
-        Checkout.update_cart_lines(cart.cart_id, [
-          %{action: "add", product_id: product.id, quantity: 2}
-        ])
+        Checkout.update_cart_lines(
+          cart.cart_id,
+          [%{action: "add", product_id: product.id, quantity: 2}],
+          scope
+        )
 
       assert updated.status == "cart_updated"
       assert Enum.map(updated.line_items, & &1.product_id) == [product.id]
 
       {:ok, _response} =
-        Checkout.set_buyer_identity(cart.cart_id, %{
-          email: "buyer@example.com",
-          first_name: "Ada",
-          last_name: "Agent"
-        })
+        Checkout.set_buyer_identity(
+          cart.cart_id,
+          %{
+            email: "buyer@example.com",
+            first_name: "Ada",
+            last_name: "Agent"
+          },
+          scope
+        )
 
       {:ok, priced} =
         Checkout.set_shipping_address(
@@ -146,7 +160,7 @@ defmodule Mercato.CheckoutTest do
             postal_code: "94105",
             country: "US"
           },
-          shipping_method: "standard"
+          Keyword.put(scope, :shipping_method, "standard")
         )
 
       assert priced.price_breakdown.subtotal.amount == "200.00"
@@ -160,7 +174,7 @@ defmodule Mercato.CheckoutTest do
     end
 
     test "creates an idempotent checkout session with a redirect handoff", %{product: product} do
-      {:ok, cart_id} = build_ready_cart(product)
+      {:ok, cart_id, cart_token} = build_ready_cart(product)
 
       request = %{
         idempotency_key: "checkout-#{Ecto.UUID.generate()}",
@@ -170,12 +184,14 @@ defmodule Mercato.CheckoutTest do
 
       {:ok, first} =
         Checkout.create_checkout_session(cart_id, request,
-          checkout_provider: TestCheckoutProvider
+          checkout_provider: TestCheckoutProvider,
+          scope: [cart_token: cart_token]
         )
 
       {:ok, second} =
         Checkout.create_checkout_session(cart_id, request,
-          checkout_provider: TestCheckoutProvider
+          checkout_provider: TestCheckoutProvider,
+          scope: [cart_token: cart_token]
         )
 
       assert first.status == "checkout_session_created"
@@ -189,7 +205,7 @@ defmodule Mercato.CheckoutTest do
     end
 
     test "creates a payment-session abstraction with a client secret", %{product: product} do
-      {:ok, cart_id} = build_ready_cart(product)
+      {:ok, cart_id, cart_token} = build_ready_cart(product)
 
       {:ok, response} =
         Checkout.create_payment_session(
@@ -198,7 +214,8 @@ defmodule Mercato.CheckoutTest do
             idempotency_key: "payment-#{Ecto.UUID.generate()}",
             payment_flow: "payment_intent"
           },
-          payment_provider: TestPaymentProvider
+          payment_provider: TestPaymentProvider,
+          scope: [cart_token: cart_token]
         )
 
       assert response.status == "payment_session_created"
@@ -219,22 +236,26 @@ defmodule Mercato.CheckoutTest do
 
     test "requires shipping address before pricing physical goods", %{product: product} do
       {:ok, cart} = Checkout.create_cart(%{})
+      scope = scope_for(cart)
 
       {:ok, _updated} =
-        Checkout.update_cart_lines(cart.cart_id, [
-          %{action: "add", product_id: product.id, quantity: 1}
-        ])
+        Checkout.update_cart_lines(
+          cart.cart_id,
+          [%{action: "add", product_id: product.id, quantity: 1}],
+          scope
+        )
 
       assert {:error, %ValidationError{code: :shipping_address_required}} =
-               Checkout.price_checkout(cart.cart_id)
+               Checkout.price_checkout(cart.cart_id, %{}, scope)
     end
 
     test "requires idempotency for checkout session creation", %{product: product} do
-      {:ok, cart_id} = build_ready_cart(product)
+      {:ok, cart_id, cart_token} = build_ready_cart(product)
 
       assert {:error, %Mercato.Checkout.IdempotencyError{}} =
                Checkout.create_checkout_session(cart_id, %{},
-                 checkout_provider: TestCheckoutProvider
+                 checkout_provider: TestCheckoutProvider,
+                 scope: [cart_token: cart_token]
                )
     end
 
@@ -242,26 +263,141 @@ defmodule Mercato.CheckoutTest do
       {:ok, cart} = Checkout.create_cart(%{})
 
       assert {:error, %ValidationError{code: :invalid_quantity}} =
-               Checkout.update_cart_lines(cart.cart_id, [
-                 %{action: "add", product_id: product.id, quantity: 0}
-               ])
+               Checkout.update_cart_lines(
+                 cart.cart_id,
+                 [%{action: "add", product_id: product.id, quantity: 0}],
+                 scope_for(cart)
+               )
+    end
+  end
+
+  describe "authorization (IDOR protection)" do
+    test "guest cart access requires the matching cart token", %{product: product} do
+      {:ok, cart} = Checkout.create_cart(%{})
+      ops = [%{action: "add", product_id: product.id, quantity: 1}]
+
+      bad_scopes = [
+        [],
+        [scope: [cart_token: "wrong-token-value"]],
+        [scope: [actor_id: Ecto.UUID.generate()]]
+      ]
+
+      for bad <- bad_scopes do
+        assert {:error, %AuthorizationError{code: :forbidden}} =
+                 Checkout.update_cart_lines(cart.cart_id, ops, bad)
+
+        assert {:error, %AuthorizationError{code: :forbidden}} =
+                 Checkout.set_buyer_identity(
+                   cart.cart_id,
+                   %{email: "x@example.com", first_name: "A", last_name: "B"},
+                   bad
+                 )
+
+        assert {:error, %AuthorizationError{code: :forbidden}} =
+                 Checkout.price_checkout(cart.cart_id, %{}, bad)
+      end
+
+      # Proof of possession (the correct token) is accepted.
+      assert {:ok, _} =
+               Checkout.update_cart_lines(cart.cart_id, ops, scope: [cart_token: cart.cart_token])
+    end
+
+    test "checkout session entry points authorize before request validation" do
+      {:ok, cart} = Checkout.create_cart(%{})
+      bad_scope = [scope: [cart_token: "wrong-token-value"]]
+
+      assert {:error, %AuthorizationError{code: :forbidden}} =
+               Checkout.create_checkout_session(cart.cart_id, %{}, bad_scope)
+
+      assert {:error, %AuthorizationError{code: :forbidden}} =
+               Checkout.create_payment_session(cart.cart_id, %{}, bad_scope)
+
+      assert {:error, %AuthorizationError{code: :forbidden}} =
+               Checkout.create_payment_intent(cart.cart_id, nil, bad_scope)
+    end
+
+    test "an unknown cart id is forbidden, not surfaced as not-found (no enumeration oracle)" do
+      assert {:error, %AuthorizationError{code: :forbidden}} =
+               Checkout.update_cart_lines(Ecto.UUID.generate(), [],
+                 scope: [cart_token: "anything"]
+               )
+    end
+
+    test "once a cart is bound to a user, token possession is no longer sufficient", %{
+      product: product
+    } do
+      {:ok, cart} = Checkout.create_cart(%{})
+      owner_id = Ecto.UUID.generate()
+
+      Mercato.Cart.Cart
+      |> Repo.get(cart.cart_id)
+      |> Ecto.Changeset.change(user_id: owner_id)
+      |> Repo.update!()
+
+      ops = [%{action: "add", product_id: product.id, quantity: 1}]
+
+      # The original guest token must NOT grant access to a now user-owned cart.
+      assert {:error, %AuthorizationError{code: :forbidden}} =
+               Checkout.update_cart_lines(cart.cart_id, ops, scope: [cart_token: cart.cart_token])
+
+      # A different authenticated user is rejected.
+      assert {:error, %AuthorizationError{code: :forbidden}} =
+               Checkout.update_cart_lines(cart.cart_id, ops,
+                 scope: [actor_id: Ecto.UUID.generate()]
+               )
+
+      # Only the owning user may act.
+      assert {:ok, _} =
+               Checkout.update_cart_lines(cart.cart_id, ops, scope: [actor_id: owner_id])
+    end
+
+    test "abandoned carts cannot be mutated or priced through checkout", %{product: product} do
+      {:ok, cart} = Checkout.create_cart(%{})
+      scope = scope_for(cart)
+
+      {:ok, _updated} =
+        Checkout.update_cart_lines(
+          cart.cart_id,
+          [%{action: "add", product_id: product.id, quantity: 1}],
+          scope
+        )
+
+      cart_record = Repo.get!(Mercato.Cart.Cart, cart.cart_id)
+      cart_record |> Ecto.Changeset.change(status: "abandoned") |> Repo.update!()
+
+      assert {:error, %ValidationError{code: :inactive_cart}} =
+               Checkout.update_cart_lines(
+                 cart.cart_id,
+                 [%{action: "add", product_id: product.id, quantity: 1}],
+                 scope
+               )
+
+      assert {:error, %ValidationError{code: :inactive_cart}} =
+               Checkout.price_checkout(cart.cart_id, %{}, scope)
     end
   end
 
   defp build_ready_cart(product) do
     {:ok, cart} = Checkout.create_cart(%{})
+    scope = scope_for(cart)
 
     {:ok, _updated} =
-      Checkout.update_cart_lines(cart.cart_id, [
-        %{action: "add", product_id: product.id, quantity: 1}
-      ])
+      Checkout.update_cart_lines(
+        cart.cart_id,
+        [%{action: "add", product_id: product.id, quantity: 1}],
+        scope
+      )
 
     {:ok, _identity} =
-      Checkout.set_buyer_identity(cart.cart_id, %{
-        email: "buyer@example.com",
-        first_name: "Buyer",
-        last_name: "Person"
-      })
+      Checkout.set_buyer_identity(
+        cart.cart_id,
+        %{
+          email: "buyer@example.com",
+          first_name: "Buyer",
+          last_name: "Person"
+        },
+        scope
+      )
 
     {:ok, _address} =
       Checkout.set_shipping_address(
@@ -273,11 +409,15 @@ defmodule Mercato.CheckoutTest do
           postal_code: "90001",
           country: "US"
         },
-        shipping_method: "standard"
+        Keyword.put(scope, :shipping_method, "standard")
       )
 
-    {:ok, cart.cart_id}
+    {:ok, cart.cart_id, cart.cart_token}
   end
+
+  # Possession-of-token scope for a guest cart, as a host would pass after authenticating
+  # the request (here, proving it holds the cart's high-entropy token).
+  defp scope_for(%{cart_token: cart_token}), do: [scope: [cart_token: cart_token]]
 
   defp create_product(product_type, price) do
     {:ok, product} =

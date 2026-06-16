@@ -51,13 +51,26 @@ defmodule Mercato.Controllers.OrderController do
   def update_status(conn, %{"id" => id} = params) do
     with :ok <- ensure_admin(conn),
          {:ok, status} <- fetch_required(params, "status"),
-         {:ok, order} <- Orders.update_status(id, status, changed_by: admin_actor(conn), notes: Map.get(params, "notes")) do
+         {:ok, order} <-
+           Orders.update_status(id, status,
+             changed_by: admin_actor(conn),
+             notes: Map.get(params, "notes")
+           ) do
       render_data(conn, order)
     else
-      {:error, :forbidden} -> render_error(conn, :forbidden, "forbidden")
-      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
-      {:error, %Ecto.Changeset{} = changeset} -> render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
+      {:error, :forbidden} ->
+        render_error(conn, :forbidden, "forbidden")
+
+      {:error, :not_found} ->
+        render_error(conn, :not_found, "not_found")
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        render_error(conn, :unprocessable_entity, "validation_error", %{
+          details: changeset_errors(changeset)
+        })
+
+      {:error, reason} ->
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
@@ -68,9 +81,14 @@ defmodule Mercato.Controllers.OrderController do
          {:ok, order} <- Orders.cancel_order(id, reason, changed_by: user_id) do
       render_data(conn, order)
     else
-      {:error, :unauthorized} -> render_error(conn, :unauthorized, "unauthorized")
-      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
+      {:error, :unauthorized} ->
+        render_error(conn, :unauthorized, "unauthorized")
+
+      {:error, :not_found} ->
+        render_error(conn, :not_found, "not_found")
+
+      {:error, reason} ->
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
@@ -81,11 +99,20 @@ defmodule Mercato.Controllers.OrderController do
          {:ok, order} <- Orders.refund_order(id, amount, reason, changed_by: admin_actor(conn)) do
       render_data(conn, order)
     else
-      {:error, :forbidden} -> render_error(conn, :forbidden, "forbidden")
-      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
-      {:error, :missing_decimal} -> render_error(conn, :unprocessable_entity, "validation_error", %{reason: "missing amount"})
-      {:error, :invalid_decimal} -> render_error(conn, :unprocessable_entity, "validation_error", %{reason: "invalid amount"})
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
+      {:error, :forbidden} ->
+        render_error(conn, :forbidden, "forbidden")
+
+      {:error, :not_found} ->
+        render_error(conn, :not_found, "not_found")
+
+      {:error, :missing_decimal} ->
+        render_error(conn, :unprocessable_entity, "validation_error", %{reason: "missing amount"})
+
+      {:error, :invalid_decimal} ->
+        render_error(conn, :unprocessable_entity, "validation_error", %{reason: "invalid amount"})
+
+      {:error, reason} ->
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 

@@ -61,7 +61,7 @@ defmodule Mercato.Customers do
       {:ok, %Customer{addresses: [...]}}
   """
   def get_customer(user_id, opts \\ []) do
-    query = from c in Customer, where: c.user_id == ^user_id
+    query = from(c in Customer, where: c.user_id == ^user_id)
 
     case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
@@ -87,7 +87,7 @@ defmodule Mercato.Customers do
       {:error, :not_found}
   """
   def get_customer_by_id(customer_id, opts \\ []) do
-    query = from c in Customer, where: c.id == ^customer_id
+    query = from(c in Customer, where: c.id == ^customer_id)
 
     case query |> maybe_preload(opts[:preload]) |> repo().one() do
       nil -> {:error, :not_found}
@@ -179,11 +179,11 @@ defmodule Mercato.Customers do
       [%Address{address_type: "billing"}, ...]
   """
   def list_addresses(customer_id, opts \\ []) do
-    query = from a in Address, where: a.customer_id == ^customer_id
+    query = from(a in Address, where: a.customer_id == ^customer_id)
 
     query
     |> filter_by_address_type(opts[:address_type])
-    |> order_by([a], [desc: a.is_default, asc: a.inserted_at])
+    |> order_by([a], desc: a.is_default, asc: a.inserted_at)
     |> repo().all()
   end
 
@@ -267,7 +267,9 @@ defmodule Mercato.Customers do
     repo().transaction(fn ->
       # If this is being set as default, unset existing defaults of the same type
       if Map.get(attrs, :is_default) || Map.get(attrs, "is_default") do
-        address_type = Map.get(attrs, :address_type) || Map.get(attrs, "address_type") || address.address_type
+        address_type =
+          Map.get(attrs, :address_type) || Map.get(attrs, "address_type") || address.address_type
+
         unset_default_address(address.customer_id, address_type, address.id)
       end
 
@@ -307,8 +309,12 @@ defmodule Mercato.Customers do
       {:error, :not_found}
   """
   def get_default_address(customer_id, address_type) do
-    query = from a in Address,
-      where: a.customer_id == ^customer_id and a.address_type == ^address_type and a.is_default == true
+    query =
+      from(a in Address,
+        where:
+          a.customer_id == ^customer_id and a.address_type == ^address_type and
+            a.is_default == true
+      )
 
     case repo().one(query) do
       nil -> {:error, :not_found}
@@ -362,9 +368,11 @@ defmodule Mercato.Customers do
   """
   def get_order_history(customer_id, opts \\ []) do
     with {:ok, customer} <- get_customer_by_id(customer_id) do
-      query = from o in Mercato.Orders.Order,
-        where: o.user_id == ^customer.user_id,
-        order_by: [desc: o.inserted_at]
+      query =
+        from(o in Mercato.Orders.Order,
+          where: o.user_id == ^customer.user_id,
+          order_by: [desc: o.inserted_at]
+        )
 
       query
       |> maybe_limit(opts[:limit])
@@ -394,9 +402,11 @@ defmodule Mercato.Customers do
       [%Order{items: [...]}, ...]
   """
   def get_order_history_by_user_id(user_id, opts \\ []) do
-    query = from o in Mercato.Orders.Order,
-      where: o.user_id == ^user_id,
-      order_by: [desc: o.inserted_at]
+    query =
+      from(o in Mercato.Orders.Order,
+        where: o.user_id == ^user_id,
+        order_by: [desc: o.inserted_at]
+      )
 
     query
     |> maybe_limit(opts[:limit])
@@ -421,14 +431,19 @@ defmodule Mercato.Customers do
   defp maybe_limit(query, limit), do: from(q in query, limit: ^limit)
 
   defp unset_default_address(customer_id, address_type, exclude_id \\ nil) do
-    query = from a in Address,
-      where: a.customer_id == ^customer_id and a.address_type == ^address_type and a.is_default == true
+    query =
+      from(a in Address,
+        where:
+          a.customer_id == ^customer_id and a.address_type == ^address_type and
+            a.is_default == true
+      )
 
-    query = if exclude_id do
-      from a in query, where: a.id != ^exclude_id
-    else
-      query
-    end
+    query =
+      if exclude_id do
+        from(a in query, where: a.id != ^exclude_id)
+      else
+        query
+      end
 
     repo().update_all(query, set: [is_default: false])
   end

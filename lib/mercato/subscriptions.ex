@@ -366,11 +366,20 @@ defmodule Mercato.Subscriptions do
         {:ok, %{order: order, updated_subscription: updated_subscription}} ->
           Events.broadcast_order_created(order)
           Events.broadcast_subscription_renewed(updated_subscription, order)
-          Telemetry.execute([:subscription, :renewal, :stop], %{count: 1}, %{subscription_id: subscription.id, order_id: order.id})
+
+          Telemetry.execute([:subscription, :renewal, :stop], %{count: 1}, %{
+            subscription_id: subscription.id,
+            order_id: order.id
+          })
+
           {:ok, order}
 
         {:error, _step, reason, _changes} ->
-          Telemetry.execute([:subscription, :renewal, :exception], %{count: 1}, %{subscription_id: subscription.id, reason: reason})
+          Telemetry.execute([:subscription, :renewal, :exception], %{count: 1}, %{
+            subscription_id: subscription.id,
+            reason: reason
+          })
+
           {:error, reason}
       end
     else
@@ -440,7 +449,12 @@ defmodule Mercato.Subscriptions do
         date: date
       }
 
-      Telemetry.execute([:subscription, :renewal_run, :stop], %{processed: summary.processed}, summary)
+      Telemetry.execute(
+        [:subscription, :renewal_run, :stop],
+        %{processed: summary.processed},
+        summary
+      )
+
       {:ok, summary}
     end)
   end
@@ -449,7 +463,9 @@ defmodule Mercato.Subscriptions do
   Returns a child spec for the optional subscription scheduler.
   """
   def scheduler_child_spec(opts \\ []) do
-    Supervisor.child_spec({Mercato.Subscriptions.Scheduler, opts}, id: Mercato.Subscriptions.Scheduler)
+    Supervisor.child_spec({Mercato.Subscriptions.Scheduler, opts},
+      id: Mercato.Subscriptions.Scheduler
+    )
   end
 
   # Private Functions

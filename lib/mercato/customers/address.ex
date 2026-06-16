@@ -31,16 +31,16 @@ defmodule Mercato.Customers.Address do
   @address_types ~w(billing shipping)
 
   schema "addresses" do
-    field :address_type, :string
-    field :line1, :string
-    field :line2, :string
-    field :city, :string
-    field :state, :string
-    field :postal_code, :string
-    field :country, :string
-    field :is_default, :boolean, default: false
+    field(:address_type, :string)
+    field(:line1, :string)
+    field(:line2, :string)
+    field(:city, :string)
+    field(:state, :string)
+    field(:postal_code, :string)
+    field(:country, :string)
+    field(:is_default, :boolean, default: false)
 
-    belongs_to :customer, Customer
+    belongs_to(:customer, Customer)
 
     timestamps(type: :utc_datetime)
   end
@@ -110,7 +110,15 @@ defmodule Mercato.Customers.Address do
 
   defp validate_address_fields(changeset) do
     changeset
-    |> validate_required([:customer_id, :address_type, :line1, :city, :state, :postal_code, :country])
+    |> validate_required([
+      :customer_id,
+      :address_type,
+      :line1,
+      :city,
+      :state,
+      :postal_code,
+      :country
+    ])
     |> validate_inclusion(:address_type, @address_types)
     |> validate_length(:line1, min: 1)
     |> validate_length(:city, min: 1)

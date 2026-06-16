@@ -186,7 +186,9 @@ defmodule Mercato.SubscriptionsTest do
     test "get_subscriptions_due_for_renewal/2 bounds results with :limit", %{product: product} do
       make_due = fn ->
         {:ok, sub} =
-          Subscriptions.create_subscription(valid_attrs(product.id, %{user_id: Ecto.UUID.generate()}))
+          Subscriptions.create_subscription(
+            valid_attrs(product.id, %{user_id: Ecto.UUID.generate()})
+          )
 
         {:ok, _} =
           sub
@@ -199,13 +201,17 @@ defmodule Mercato.SubscriptionsTest do
       make_due.()
 
       assert length(Subscriptions.get_subscriptions_due_for_renewal(Date.utc_today())) == 3
-      assert length(Subscriptions.get_subscriptions_due_for_renewal(Date.utc_today(), limit: 2)) == 2
+
+      assert length(Subscriptions.get_subscriptions_due_for_renewal(Date.utc_today(), limit: 2)) ==
+               2
     end
 
     test "process_due_renewals/1 honors batch_size", %{product: product} do
       for _ <- 1..3 do
         {:ok, sub} =
-          Subscriptions.create_subscription(valid_attrs(product.id, %{user_id: Ecto.UUID.generate()}))
+          Subscriptions.create_subscription(
+            valid_attrs(product.id, %{user_id: Ecto.UUID.generate()})
+          )
 
         {:ok, _} =
           sub

@@ -22,11 +22,11 @@ defmodule Mercato.Coupons.CouponUsage do
   @foreign_key_type :binary_id
 
   schema "coupon_usages" do
-    field :user_id, :binary_id
-    field :order_id, :binary_id
-    field :used_at, :utc_datetime
+    field(:user_id, :binary_id)
+    field(:order_id, :binary_id)
+    field(:used_at, :utc_datetime)
 
-    belongs_to :coupon, Coupon
+    belongs_to(:coupon, Coupon)
 
     timestamps(type: :utc_datetime)
   end

@@ -29,7 +29,13 @@ defmodule Mercato.TestPaymentGateway do
     if transaction_id == "bad_txn" do
       {:error, :transaction_not_found}
     else
-      {:ok, %{status: "succeeded", refund_id: "refund_123", transaction_id: transaction_id, amount: amount}}
+      {:ok,
+       %{
+         status: "succeeded",
+         refund_id: "refund_123",
+         transaction_id: transaction_id,
+         amount: amount
+       }}
     end
   end
 

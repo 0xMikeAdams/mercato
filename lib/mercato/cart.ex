@@ -180,6 +180,7 @@ defmodule Mercato.Cart do
     variant_id = Keyword.get(opts, :variant_id)
 
     with {:ok, cart} <- get_cart(cart_id),
+         :ok <- ensure_active_cart(cart),
          {:ok, product} <- fetch_product(product_id),
          {:ok, price} <- get_item_price(product, variant_id) do
       # Check if item already exists in cart
@@ -242,6 +243,7 @@ defmodule Mercato.Cart do
   """
   def update_item_quantity(cart_id, item_id, quantity) when quantity > 0 do
     with {:ok, cart} <- get_cart(cart_id),
+         :ok <- ensure_active_cart(cart),
          {:ok, item} <- get_cart_item(cart, item_id) do
       item
       |> CartItem.changeset(%{quantity: quantity})
@@ -281,6 +283,7 @@ defmodule Mercato.Cart do
   """
   def remove_item(cart_id, item_id) do
     with {:ok, cart} <- get_cart(cart_id),
+         :ok <- ensure_active_cart(cart),
          {:ok, item} <- get_cart_item(cart, item_id) do
       repo().delete(item)
 
@@ -308,7 +311,8 @@ defmodule Mercato.Cart do
       {:error, :not_found}
   """
   def clear_cart(cart_id) do
-    with {:ok, cart} <- get_cart(cart_id) do
+    with {:ok, cart} <- get_cart(cart_id),
+         :ok <- ensure_active_cart(cart) do
       # Delete all cart items
       from(i in CartItem, where: i.cart_id == ^cart_id)
       |> repo().delete_all()
@@ -358,6 +362,7 @@ defmodule Mercato.Cart do
     alias Mercato.Coupons
 
     with {:ok, cart} <- get_cart(cart_id),
+         :ok <- ensure_active_cart(cart),
          {:ok, coupon} <- Coupons.validate_coupon(coupon_code, cart) do
       # Apply coupon to cart
       cart
@@ -390,7 +395,8 @@ defmodule Mercato.Cart do
       {:ok, %Cart{}}
   """
   def remove_coupon(cart_id) do
-    with {:ok, cart} <- get_cart(cart_id) do
+    with {:ok, cart} <- get_cart(cart_id),
+         :ok <- ensure_active_cart(cart) do
       cart
       |> Cart.coupon_changeset(%{applied_coupon_id: nil})
       |> repo().update()
@@ -424,6 +430,7 @@ defmodule Mercato.Cart do
     alias Mercato.Referrals
 
     with {:ok, cart} <- get_cart(cart_id),
+         :ok <- ensure_active_cart(cart),
          {:ok, referral_code_record} <- Referrals.get_referral_code(referral_code) do
       # Apply referral code to cart
       cart
@@ -448,7 +455,8 @@ defmodule Mercato.Cart do
       {:ok, %Cart{}}
   """
   def remove_referral_code(cart_id) do
-    with {:ok, cart} <- get_cart(cart_id) do
+    with {:ok, cart} <- get_cart(cart_id),
+         :ok <- ensure_active_cart(cart) do
       cart
       |> Cart.referral_changeset(%{referral_code_id: nil})
       |> repo().update()
@@ -469,7 +477,8 @@ defmodule Mercato.Cart do
   checkout destination and shipping method.
   """
   def update_checkout_context(cart_id, attrs) when is_map(attrs) do
-    with {:ok, cart} <- get_cart(cart_id) do
+    with {:ok, cart} <- get_cart(cart_id),
+         :ok <- ensure_active_cart(cart) do
       cart
       |> Cart.checkout_context_changeset(attrs)
       |> repo().update()
@@ -516,7 +525,8 @@ defmodule Mercato.Cart do
       {:ok, %Cart{}}
   """
   def recalculate_totals(cart_id, opts \\ []) do
-    with {:ok, cart} <- get_cart(cart_id) do
+    with {:ok, cart} <- get_cart(cart_id),
+         :ok <- ensure_active_cart(cart) do
       pricing_opts = merge_checkout_pricing_opts(cart, opts)
 
       # Use Calculator module to compute all totals
@@ -670,6 +680,9 @@ defmodule Mercato.Cart do
       item -> {:ok, item}
     end
   end
+
+  defp ensure_active_cart(%Cart{status: "active"}), do: :ok
+  defp ensure_active_cart(%Cart{}), do: {:error, :inactive_cart}
 
   defp get_item_price(product, nil) do
     # Use product price if no variant

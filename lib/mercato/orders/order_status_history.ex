@@ -26,13 +26,13 @@ defmodule Mercato.Orders.OrderStatusHistory do
   @status_options ~w(pending processing completed cancelled refunded failed)
 
   schema "order_status_history" do
-    field :from_status, :string
-    field :to_status, :string
-    field :notes, :string
-    field :changed_by, :binary_id
-    field :changed_at, :utc_datetime
+    field(:from_status, :string)
+    field(:to_status, :string)
+    field(:notes, :string)
+    field(:changed_by, :binary_id)
+    field(:changed_at, :utc_datetime)
 
-    belongs_to :order, Order
+    belongs_to(:order, Order)
 
     timestamps(type: :utc_datetime)
   end

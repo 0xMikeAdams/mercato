@@ -41,7 +41,8 @@ defmodule Mercato.Subscriptions.Scheduler do
   alias Mercato.Subscriptions
 
   # Default configuration
-  @default_interval :timer.hours(1)  # Check every hour
+  # Check every hour
+  @default_interval :timer.hours(1)
   @default_batch_size 100
   @default_enabled false
 
@@ -109,7 +110,9 @@ defmodule Mercato.Subscriptions.Scheduler do
     # Schedule the first renewal check if enabled
     state = if state.enabled, do: schedule_next_check(state), else: state
 
-    Logger.info("Subscription scheduler started with interval: #{state.interval}ms, enabled: #{state.enabled}")
+    Logger.info(
+      "Subscription scheduler started with interval: #{state.interval}ms, enabled: #{state.enabled}"
+    )
 
     {:ok, state}
   end
@@ -209,6 +212,7 @@ defmodule Mercato.Subscriptions.Scheduler do
   end
 
   defp cancel_timer(%{timer_ref: nil} = state), do: state
+
   defp cancel_timer(%{timer_ref: timer_ref} = state) do
     Process.cancel_timer(timer_ref)
     %{state | timer_ref: nil}
@@ -261,6 +265,7 @@ defmodule Mercato.Subscriptions.Scheduler do
   end
 
   defp get_next_run_time(%{timer_ref: nil}), do: nil
+
   defp get_next_run_time(%{timer_ref: timer_ref}) do
     case Process.read_timer(timer_ref) do
       false -> nil

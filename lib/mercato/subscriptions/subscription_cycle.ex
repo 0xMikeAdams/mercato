@@ -31,13 +31,13 @@ defmodule Mercato.Subscriptions.SubscriptionCycle do
   @status_options ~w(pending completed failed)
 
   schema "subscription_cycles" do
-    field :cycle_number, :integer
-    field :billing_date, :date
-    field :amount, :decimal
-    field :order_id, :binary_id
-    field :status, :string, default: "pending"
+    field(:cycle_number, :integer)
+    field(:billing_date, :date)
+    field(:amount, :decimal)
+    field(:order_id, :binary_id)
+    field(:status, :string, default: "pending")
 
-    belongs_to :subscription, Mercato.Subscriptions.Subscription
+    belongs_to(:subscription, Mercato.Subscriptions.Subscription)
 
     timestamps(type: :utc_datetime)
   end
@@ -110,14 +110,20 @@ defmodule Mercato.Subscriptions.SubscriptionCycle do
     new_status = get_change(changeset, :status)
 
     if new_status && !valid_status_transition?(old_status, new_status) do
-      add_error(changeset, :status, "invalid status transition from #{old_status} to #{new_status}")
+      add_error(
+        changeset,
+        :status,
+        "invalid status transition from #{old_status} to #{new_status}"
+      )
     else
       changeset
     end
   end
 
   # Define valid status transitions
-  defp valid_status_transition?("pending", new_status) when new_status in ~w(completed failed), do: true
+  defp valid_status_transition?("pending", new_status) when new_status in ~w(completed failed),
+    do: true
+
   defp valid_status_transition?("completed", _new_status), do: false
   defp valid_status_transition?("failed", new_status) when new_status in ~w(pending), do: true
   defp valid_status_transition?(_, _), do: false

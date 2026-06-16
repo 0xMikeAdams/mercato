@@ -37,14 +37,14 @@ defmodule Mercato.Orders.OrderItem do
   @foreign_key_type :binary_id
 
   schema "order_items" do
-    field :quantity, :integer
-    field :unit_price, :decimal
-    field :total_price, :decimal
-    field :product_snapshot, :map
+    field(:quantity, :integer)
+    field(:unit_price, :decimal)
+    field(:total_price, :decimal)
+    field(:product_snapshot, :map)
 
-    belongs_to :order, Order
-    field :product_id, :binary_id
-    field :variant_id, :binary_id
+    belongs_to(:order, Order)
+    field(:product_id, :binary_id)
+    field(:variant_id, :binary_id)
 
     timestamps(type: :utc_datetime)
   end
@@ -96,7 +96,11 @@ defmodule Mercato.Orders.OrderItem do
       if Enum.empty?(missing_fields) do
         changeset
       else
-        add_error(changeset, :product_snapshot, "missing required fields: #{Enum.join(missing_fields, ", ")}")
+        add_error(
+          changeset,
+          :product_snapshot,
+          "missing required fields: #{Enum.join(missing_fields, ", ")}"
+        )
       end
     else
       add_error(changeset, :product_snapshot, "must be a valid map")

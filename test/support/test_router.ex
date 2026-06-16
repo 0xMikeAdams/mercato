@@ -4,11 +4,11 @@ defmodule Mercato.TestRouter do
   import Mercato.Router
 
   pipeline :api do
-    plug :accepts, ["json"]
+    plug(:accepts, ["json"])
   end
 
   scope "/api", alias: Mercato, as: false do
-    pipe_through :api
+    pipe_through(:api)
     mercato_public_routes()
     mercato_customer_routes()
     mercato_admin_routes()

@@ -218,7 +218,11 @@ defmodule Mercato.Events do
   Broadcasts a stock updated event.
   """
   def broadcast_stock_updated(product_id, new_quantity) do
-    PubSub.broadcast(pubsub(), "inventory:#{product_id}", {:stock_updated, product_id, new_quantity})
+    PubSub.broadcast(
+      pubsub(),
+      "inventory:#{product_id}",
+      {:stock_updated, product_id, new_quantity}
+    )
   end
 
   # Subscription Events
@@ -241,7 +245,11 @@ defmodule Mercato.Events do
   Broadcasts a subscription created event.
   """
   def broadcast_subscription_created(subscription) do
-    PubSub.broadcast(pubsub(), "subscription:#{subscription.id}", {:subscription_created, subscription})
+    PubSub.broadcast(
+      pubsub(),
+      "subscription:#{subscription.id}",
+      {:subscription_created, subscription}
+    )
   end
 
   @doc """
@@ -259,21 +267,33 @@ defmodule Mercato.Events do
   Broadcasts a subscription paused event.
   """
   def broadcast_subscription_paused(subscription) do
-    PubSub.broadcast(pubsub(), "subscription:#{subscription.id}", {:subscription_paused, subscription})
+    PubSub.broadcast(
+      pubsub(),
+      "subscription:#{subscription.id}",
+      {:subscription_paused, subscription}
+    )
   end
 
   @doc """
   Broadcasts a subscription resumed event.
   """
   def broadcast_subscription_resumed(subscription) do
-    PubSub.broadcast(pubsub(), "subscription:#{subscription.id}", {:subscription_resumed, subscription})
+    PubSub.broadcast(
+      pubsub(),
+      "subscription:#{subscription.id}",
+      {:subscription_resumed, subscription}
+    )
   end
 
   @doc """
   Broadcasts a subscription cancelled event.
   """
   def broadcast_subscription_cancelled(subscription) do
-    PubSub.broadcast(pubsub(), "subscription:#{subscription.id}", {:subscription_cancelled, subscription})
+    PubSub.broadcast(
+      pubsub(),
+      "subscription:#{subscription.id}",
+      {:subscription_cancelled, subscription}
+    )
   end
 
   # Referral Events
@@ -654,13 +674,23 @@ defmodule Mercato.Events do
   """
   def subscribe_to_multiple_liveview(subscriptions) do
     Enum.each(subscriptions, fn
-      {:cart, cart_id} -> subscribe_to_cart_liveview(cart_id)
-      {:order, order_id} -> subscribe_to_order_liveview(order_id)
-      {:inventory, product_id} when is_binary(product_id) -> subscribe_to_inventory_liveview(product_id)
+      {:cart, cart_id} ->
+        subscribe_to_cart_liveview(cart_id)
+
+      {:order, order_id} ->
+        subscribe_to_order_liveview(order_id)
+
+      {:inventory, product_id} when is_binary(product_id) ->
+        subscribe_to_inventory_liveview(product_id)
+
       {:inventory, product_ids} when is_list(product_ids) ->
         Enum.each(product_ids, &subscribe_to_inventory_liveview/1)
-      {:subscription, subscription_id} -> subscribe_to_subscription_liveview(subscription_id)
-      {:referral, referral_code_id} -> subscribe_to_referral(referral_code_id)
+
+      {:subscription, subscription_id} ->
+        subscribe_to_subscription_liveview(subscription_id)
+
+      {:referral, referral_code_id} ->
+        subscribe_to_referral(referral_code_id)
     end)
 
     :ok

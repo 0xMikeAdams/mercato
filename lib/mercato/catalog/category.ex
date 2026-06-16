@@ -36,13 +36,13 @@ defmodule Mercato.Catalog.Category do
   @foreign_key_type :binary_id
 
   schema "categories" do
-    field :name, :string
-    field :slug, :string
-    field :description, :string
+    field(:name, :string)
+    field(:slug, :string)
+    field(:description, :string)
 
-    belongs_to :parent, __MODULE__
-    has_many :children, __MODULE__, foreign_key: :parent_id
-    many_to_many :products, Mercato.Catalog.Product, join_through: "product_categories"
+    belongs_to(:parent, __MODULE__)
+    has_many(:children, __MODULE__, foreign_key: :parent_id)
+    many_to_many(:products, Mercato.Catalog.Product, join_through: "product_categories")
 
     timestamps()
   end
@@ -64,7 +64,9 @@ defmodule Mercato.Catalog.Category do
     |> cast(attrs, [:name, :slug, :description, :parent_id])
     |> validate_required([:name, :slug])
     |> validate_length(:name, min: 1)
-    |> validate_format(:slug, ~r/^[a-z0-9-]+$/, message: "must be lowercase alphanumeric with hyphens")
+    |> validate_format(:slug, ~r/^[a-z0-9-]+$/,
+      message: "must be lowercase alphanumeric with hyphens"
+    )
     |> foreign_key_constraint(:parent_id)
     |> unique_constraint(:slug)
   end

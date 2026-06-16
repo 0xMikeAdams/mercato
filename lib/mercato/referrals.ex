@@ -76,7 +76,11 @@ defmodule Mercato.Referrals do
     |> repo().insert()
     |> case do
       {:ok, referral_code} = result ->
-        Telemetry.execute([:referral, :code_generate, :stop], %{count: 1}, %{referral_code_id: referral_code.id, user_id: user_id})
+        Telemetry.execute([:referral, :code_generate, :stop], %{count: 1}, %{
+          referral_code_id: referral_code.id,
+          user_id: user_id
+        })
+
         result
 
       error ->
@@ -240,7 +244,10 @@ defmodule Mercato.Referrals do
           repo().rollback(:referral_code_not_found)
         end
 
-        Telemetry.execute([:referral, :click, :stop], %{count: 1}, %{referral_code_id: referral_code.id})
+        Telemetry.execute([:referral, :click, :stop], %{count: 1}, %{
+          referral_code_id: referral_code.id
+        })
+
         click
       end)
     else

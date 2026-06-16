@@ -46,18 +46,18 @@ defmodule Mercato.Subscriptions.Subscription do
   @billing_cycle_options ~w(daily weekly monthly yearly)
 
   schema "subscriptions" do
-    field :user_id, :binary_id
-    field :product_id, :binary_id
-    field :variant_id, :binary_id
-    field :status, :string, default: "active"
-    field :billing_cycle, :string
-    field :trial_end_date, :date
-    field :start_date, :date
-    field :next_billing_date, :date
-    field :end_date, :date
-    field :billing_amount, :decimal
+    field(:user_id, :binary_id)
+    field(:product_id, :binary_id)
+    field(:variant_id, :binary_id)
+    field(:status, :string, default: "active")
+    field(:billing_cycle, :string)
+    field(:trial_end_date, :date)
+    field(:start_date, :date)
+    field(:next_billing_date, :date)
+    field(:end_date, :date)
+    field(:billing_amount, :decimal)
 
-    has_many :cycles, SubscriptionCycle, foreign_key: :subscription_id
+    has_many(:cycles, SubscriptionCycle, foreign_key: :subscription_id)
 
     timestamps(type: :utc_datetime)
   end
@@ -190,15 +190,23 @@ defmodule Mercato.Subscriptions.Subscription do
     new_status = get_change(changeset, :status)
 
     if new_status && !valid_status_transition?(old_status, new_status) do
-      add_error(changeset, :status, "invalid status transition from #{old_status} to #{new_status}")
+      add_error(
+        changeset,
+        :status,
+        "invalid status transition from #{old_status} to #{new_status}"
+      )
     else
       changeset
     end
   end
 
   # Define valid status transitions
-  defp valid_status_transition?("active", new_status) when new_status in ~w(paused cancelled expired), do: true
-  defp valid_status_transition?("paused", new_status) when new_status in ~w(active cancelled expired), do: true
+  defp valid_status_transition?("active", new_status)
+       when new_status in ~w(paused cancelled expired), do: true
+
+  defp valid_status_transition?("paused", new_status)
+       when new_status in ~w(active cancelled expired), do: true
+
   defp valid_status_transition?("cancelled", _new_status), do: false
   defp valid_status_transition?("expired", _new_status), do: false
   defp valid_status_transition?(_, _), do: false

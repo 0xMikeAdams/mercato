@@ -37,17 +37,17 @@ defmodule Mercato.Referrals.ReferralCode do
   @status_values ~w(active inactive)
 
   schema "referral_codes" do
-    field :user_id, :binary_id
-    field :code, :string
-    field :status, :string, default: "active"
-    field :commission_type, :string
-    field :commission_value, :decimal
-    field :clicks_count, :integer, default: 0
-    field :conversions_count, :integer, default: 0
-    field :total_commission, :decimal, default: Decimal.new("0.00")
+    field(:user_id, :binary_id)
+    field(:code, :string)
+    field(:status, :string, default: "active")
+    field(:commission_type, :string)
+    field(:commission_value, :decimal)
+    field(:clicks_count, :integer, default: 0)
+    field(:conversions_count, :integer, default: 0)
+    field(:total_commission, :decimal, default: Decimal.new("0.00"))
 
-    has_many :referral_clicks, Mercato.Referrals.ReferralClick
-    has_many :commissions, Mercato.Referrals.Commission
+    has_many(:referral_clicks, Mercato.Referrals.ReferralClick)
+    has_many(:commissions, Mercato.Referrals.Commission)
 
     timestamps(type: :utc_datetime)
   end
@@ -123,10 +123,15 @@ defmodule Mercato.Referrals.ReferralCode do
     commission_value = get_field(changeset, :commission_value)
 
     if commission_type == "percentage" && commission_value do
-      if Decimal.compare(commission_value, 0) == :gt && Decimal.compare(commission_value, 100) != :gt do
+      if Decimal.compare(commission_value, 0) == :gt &&
+           Decimal.compare(commission_value, 100) != :gt do
         changeset
       else
-        add_error(changeset, :commission_value, "must be between 0 and 100 for percentage commissions")
+        add_error(
+          changeset,
+          :commission_value,
+          "must be between 0 and 100 for percentage commissions"
+        )
       end
     else
       changeset

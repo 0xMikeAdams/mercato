@@ -21,12 +21,12 @@ defmodule Mercato.Referrals.ReferralClick do
   @foreign_key_type :binary_id
 
   schema "referral_clicks" do
-    field :ip_address, :string
-    field :user_agent, :string
-    field :referrer_url, :string
-    field :clicked_at, :utc_datetime
+    field(:ip_address, :string)
+    field(:user_agent, :string)
+    field(:referrer_url, :string)
+    field(:clicked_at, :utc_datetime)
 
-    belongs_to :referral_code, Mercato.Referrals.ReferralCode
+    belongs_to(:referral_code, Mercato.Referrals.ReferralCode)
   end
 
   @doc """
@@ -62,7 +62,9 @@ defmodule Mercato.Referrals.ReferralClick do
   # Validates IP address format (basic validation for IPv4 and IPv6)
   defp validate_ip_address(changeset) do
     case get_change(changeset, :ip_address) do
-      nil -> changeset
+      nil ->
+        changeset
+
       ip_address ->
         case :inet.parse_address(String.to_charlist(ip_address)) do
           {:ok, _} -> changeset

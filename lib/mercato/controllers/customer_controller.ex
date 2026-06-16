@@ -23,14 +23,24 @@ defmodule Mercato.Controllers.CustomerController do
       case Customers.get_customer(user_id, preload: [:addresses]) do
         {:ok, customer} ->
           case Customers.update_customer(customer, put_attr(attrs, :user_id, user_id)) do
-            {:ok, updated_customer} -> render_data(conn, updated_customer)
-            {:error, %Ecto.Changeset{} = changeset} -> render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+            {:ok, updated_customer} ->
+              render_data(conn, updated_customer)
+
+            {:error, %Ecto.Changeset{} = changeset} ->
+              render_error(conn, :unprocessable_entity, "validation_error", %{
+                details: changeset_errors(changeset)
+              })
           end
 
         {:error, :not_found} ->
           case Customers.create_customer(put_attr(attrs, :user_id, user_id)) do
-            {:ok, customer} -> render_data(conn, customer, :created)
-            {:error, %Ecto.Changeset{} = changeset} -> render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+            {:ok, customer} ->
+              render_data(conn, customer, :created)
+
+            {:error, %Ecto.Changeset{} = changeset} ->
+              render_error(conn, :unprocessable_entity, "validation_error", %{
+                details: changeset_errors(changeset)
+              })
           end
       end
     else
@@ -56,13 +66,21 @@ defmodule Mercato.Controllers.CustomerController do
          {:ok, address} <- Customers.add_address(customer.id, attrs) do
       render_data(conn, address, :created)
     else
-      {:error, :unauthorized} -> render_error(conn, :unauthorized, "unauthorized")
-      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
-      {:error, %Ecto.Changeset{} = changeset} -> render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+      {:error, :unauthorized} ->
+        render_error(conn, :unauthorized, "unauthorized")
+
+      {:error, :not_found} ->
+        render_error(conn, :not_found, "not_found")
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        render_error(conn, :unprocessable_entity, "validation_error", %{
+          details: changeset_errors(changeset)
+        })
     end
   end
 
-  def update_address(conn, %{"id" => id, "address" => attrs}), do: update_address(conn, %{"id" => id} |> Map.merge(attrs))
+  def update_address(conn, %{"id" => id, "address" => attrs}),
+    do: update_address(conn, %{"id" => id} |> Map.merge(attrs))
 
   def update_address(conn, %{"id" => id} = attrs) do
     with {:ok, user_id} <- current_user_id(conn),
@@ -71,9 +89,16 @@ defmodule Mercato.Controllers.CustomerController do
          {:ok, updated_address} <- Customers.update_address(address, Map.delete(attrs, "id")) do
       render_data(conn, updated_address)
     else
-      {:error, :unauthorized} -> render_error(conn, :unauthorized, "unauthorized")
-      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
-      {:error, %Ecto.Changeset{} = changeset} -> render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+      {:error, :unauthorized} ->
+        render_error(conn, :unauthorized, "unauthorized")
+
+      {:error, :not_found} ->
+        render_error(conn, :not_found, "not_found")
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        render_error(conn, :unprocessable_entity, "validation_error", %{
+          details: changeset_errors(changeset)
+        })
     end
   end
 
@@ -84,9 +109,16 @@ defmodule Mercato.Controllers.CustomerController do
          {:ok, _address} <- Customers.delete_address(address) do
       Plug.Conn.send_resp(conn, :no_content, "")
     else
-      {:error, :unauthorized} -> render_error(conn, :unauthorized, "unauthorized")
-      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
-      {:error, %Ecto.Changeset{} = changeset} -> render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+      {:error, :unauthorized} ->
+        render_error(conn, :unauthorized, "unauthorized")
+
+      {:error, :not_found} ->
+        render_error(conn, :not_found, "not_found")
+
+      {:error, %Ecto.Changeset{} = changeset} ->
+        render_error(conn, :unprocessable_entity, "validation_error", %{
+          details: changeset_errors(changeset)
+        })
     end
   end
 

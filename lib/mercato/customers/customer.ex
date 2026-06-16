@@ -24,13 +24,13 @@ defmodule Mercato.Customers.Customer do
   @foreign_key_type :binary_id
 
   schema "customers" do
-    field :user_id, :binary_id
-    field :email, :string
-    field :first_name, :string
-    field :last_name, :string
-    field :phone, :string
+    field(:user_id, :binary_id)
+    field(:email, :string)
+    field(:first_name, :string)
+    field(:last_name, :string)
+    field(:phone, :string)
 
-    has_many :addresses, Address, foreign_key: :customer_id
+    has_many(:addresses, Address, foreign_key: :customer_id)
 
     timestamps(type: :utc_datetime)
   end
@@ -57,7 +57,9 @@ defmodule Mercato.Customers.Customer do
     |> validate_required([:user_id, :email, :first_name, :last_name])
     |> validate_length(:first_name, min: 1)
     |> validate_length(:last_name, min: 1)
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/, message: "must be a valid email address")
+    |> validate_format(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/,
+      message: "must be a valid email address"
+    )
     |> validate_phone()
     |> unique_constraint(:user_id)
   end

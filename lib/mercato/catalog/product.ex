@@ -39,25 +39,25 @@ defmodule Mercato.Catalog.Product do
   @status_options ~w(draft published archived)
 
   schema "products" do
-    field :name, :string
-    field :slug, :string
-    field :description, :string
-    field :images, {:array, :string}, default: []
-    field :price, :decimal
-    field :sale_price, :decimal
-    field :sku, :string
-    field :stock_quantity, :integer, default: 0
-    field :manage_stock, :boolean, default: true
-    field :backorders, :string, default: "no"
-    field :status, :string, default: "draft"
-    field :product_type, :string, default: "simple"
-    field :subscription_settings, :map, default: %{}
-    field :meta_title, :string
-    field :meta_description, :string
+    field(:name, :string)
+    field(:slug, :string)
+    field(:description, :string)
+    field(:images, {:array, :string}, default: [])
+    field(:price, :decimal)
+    field(:sale_price, :decimal)
+    field(:sku, :string)
+    field(:stock_quantity, :integer, default: 0)
+    field(:manage_stock, :boolean, default: true)
+    field(:backorders, :string, default: "no")
+    field(:status, :string, default: "draft")
+    field(:product_type, :string, default: "simple")
+    field(:subscription_settings, :map, default: %{})
+    field(:meta_title, :string)
+    field(:meta_description, :string)
 
-    has_many :variants, Mercato.Catalog.ProductVariant
-    many_to_many :categories, Mercato.Catalog.Category, join_through: "product_categories"
-    many_to_many :tags, Mercato.Catalog.Tag, join_through: "product_tags"
+    has_many(:variants, Mercato.Catalog.ProductVariant)
+    many_to_many(:categories, Mercato.Catalog.Category, join_through: "product_categories")
+    many_to_many(:tags, Mercato.Catalog.Tag, join_through: "product_tags")
 
     timestamps()
   end
@@ -104,7 +104,9 @@ defmodule Mercato.Catalog.Product do
     ])
     |> validate_required([:name, :slug, :price, :sku, :product_type])
     |> validate_length(:name, min: 1)
-    |> validate_format(:slug, ~r/^[a-z0-9-]+$/, message: "must be lowercase alphanumeric with hyphens")
+    |> validate_format(:slug, ~r/^[a-z0-9-]+$/,
+      message: "must be lowercase alphanumeric with hyphens"
+    )
     |> validate_number(:price, greater_than_or_equal_to: 0)
     |> validate_number(:sale_price, greater_than_or_equal_to: 0)
     |> validate_number(:stock_quantity, greater_than_or_equal_to: 0)
@@ -140,10 +142,18 @@ defmodule Mercato.Catalog.Product do
 
       cond do
         is_nil(billing_cycle) ->
-          add_error(changeset, :subscription_settings, "must include billing_cycle for subscription products")
+          add_error(
+            changeset,
+            :subscription_settings,
+            "must include billing_cycle for subscription products"
+          )
 
         billing_cycle not in valid_cycles ->
-          add_error(changeset, :subscription_settings, "billing_cycle must be one of: #{Enum.join(valid_cycles, ", ")}")
+          add_error(
+            changeset,
+            :subscription_settings,
+            "billing_cycle must be one of: #{Enum.join(valid_cycles, ", ")}"
+          )
 
         true ->
           changeset

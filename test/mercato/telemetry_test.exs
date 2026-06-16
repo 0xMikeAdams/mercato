@@ -43,7 +43,8 @@ defmodule Mercato.TelemetryTest do
 
     order_id = order.id
 
-    assert_receive {:telemetry_event, [:mercato, :order, :create, :stop], %{count: 1}, %{order_id: ^order_id}},
+    assert_receive {:telemetry_event, [:mercato, :order, :create, :stop], %{count: 1},
+                    %{order_id: ^order_id}},
                    1_000
 
     detach_handler(handler_id)
@@ -103,8 +104,8 @@ defmodule Mercato.TelemetryTest do
     assert {:ok, %{lock_acquired?: true, processed: 1, successful: 1, failed: 0}} =
              Subscriptions.process_due_renewals()
 
-    assert_receive {:telemetry_event, [:mercato, :subscription, :renewal_run, :stop], %{processed: 1},
-                    %{lock_acquired?: true, successful: 1, failed: 0}},
+    assert_receive {:telemetry_event, [:mercato, :subscription, :renewal_run, :stop],
+                    %{processed: 1}, %{lock_acquired?: true, successful: 1, failed: 0}},
                    1_000
 
     detach_handler(handler_id)

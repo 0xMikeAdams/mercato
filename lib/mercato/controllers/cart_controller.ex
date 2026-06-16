@@ -33,7 +33,9 @@ defmodule Mercato.Controllers.CartController do
         render_data(conn, cart, :created)
 
       {:error, changeset} ->
-        render_error(conn, :unprocessable_entity, "validation_error", %{details: changeset_errors(changeset)})
+        render_error(conn, :unprocessable_entity, "validation_error", %{
+          details: changeset_errors(changeset)
+        })
     end
   end
 
@@ -100,9 +102,14 @@ defmodule Mercato.Controllers.CartController do
          {:ok, cart} <- Cart.clear_cart(cart.id) do
       render_data(conn, cart)
     else
-      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
-      {:error, :forbidden} -> render_error(conn, :forbidden, "forbidden")
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
+      {:error, :not_found} ->
+        render_error(conn, :not_found, "not_found")
+
+      {:error, :forbidden} ->
+        render_error(conn, :forbidden, "forbidden")
+
+      {:error, reason} ->
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
@@ -113,9 +120,14 @@ defmodule Mercato.Controllers.CartController do
          {:ok, cart} <- Cart.apply_coupon(cart.id, coupon_code) do
       render_data(conn, cart)
     else
-      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
-      {:error, :forbidden} -> render_error(conn, :forbidden, "forbidden")
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
+      {:error, :not_found} ->
+        render_error(conn, :not_found, "not_found")
+
+      {:error, :forbidden} ->
+        render_error(conn, :forbidden, "forbidden")
+
+      {:error, reason} ->
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
@@ -125,9 +137,14 @@ defmodule Mercato.Controllers.CartController do
          {:ok, cart} <- Cart.remove_coupon(cart.id) do
       render_data(conn, cart)
     else
-      {:error, :not_found} -> render_error(conn, :not_found, "not_found")
-      {:error, :forbidden} -> render_error(conn, :forbidden, "forbidden")
-      {:error, reason} -> render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
+      {:error, :not_found} ->
+        render_error(conn, :not_found, "not_found")
+
+      {:error, :forbidden} ->
+        render_error(conn, :forbidden, "forbidden")
+
+      {:error, reason} ->
+        render_error(conn, :unprocessable_entity, "unprocessable_entity", error_detail(reason))
     end
   end
 
